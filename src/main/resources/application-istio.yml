@@ -1,0 +1,353 @@
+# TradeMaster Broker Auth Service - Istio Service Mesh Configuration
+# Spring Boot configuration optimized for Istio service mesh deployment
+
+spring:
+  application:
+    name: broker-auth-service
+  
+  # Actuator configuration for Istio health checks
+  boot:
+    admin:
+      client:
+        enabled: false
+  
+  # Web server configuration for Istio
+  server:
+    port: 8080
+    servlet:
+      context-path: /
+    tomcat:
+      threads:
+        max: 200
+        min-spare: 10
+    error:
+      include-stacktrace: never
+      include-message: never
+  
+  # Management endpoints for Istio observability
+  management:
+    server:
+      port: 8081
+    endpoints:
+      web:
+        base-path: /actuator
+        exposure:
+          include: health,info,metrics,prometheus,env,configprops,loggers
+        path-mapping:
+          health: health
+          metrics: metrics
+          prometheus: prometheus
+    endpoint:
+      health:
+        probes:
+          enabled: true
+        group:
+          liveness:
+            include: livenessState,diskSpace
+          readiness:
+            include: readinessState,db,redis,vault
+        show-details: when-authorized
+        show-components: always
+      metrics:
+        enabled: true
+      prometheus:
+        enabled: true
+    health:
+      livenessstate:
+        enabled: true
+      readinessstate:
+        enabled: true
+    metrics:
+      tags:
+        application: ${spring.application.name}
+        instance: ${POD_NAME:${spring.application.name}-${random.value}}
+        namespace: ${POD_NAMESPACE:default}
+        node: ${NODE_NAME:unknown}
+        service_mesh: istio
+      export:
+        prometheus:
+          enabled: true
+          step: PT15S
+          descriptions: true
+      distribution:
+        percentiles:
+          http.server.requests: 0.5,0.9,0.95,0.99,0.999
+          spring.data.repository.invocations: 0.5,0.9,0.95,0.99,0.999
+        percentiles-histogram:
+          http.server.requests: true
+        slo:
+          http.server.requests: 10ms,50ms,100ms,200ms,500ms,1s,2s,5s,10s
+        minimum-expected-value:
+          http.server.requests: 1ms
+        maximum-expected-value:
+          http.server.requests: 1m
+
+# Istio-specific configuration
+istio:
+  # Service mesh configuration
+  mesh:
+    enabled: true
+    mtls:
+      mode: STRICT
+    tracing:
+      enabled: true
+      sampling-rate: 1.0  # 100% for development, reduce for production
+    
+  # Circuit breaker configuration aligned with Istio
+  circuit-breaker:
+    enabled: true
+    failure-rate-threshold: 50
+    slow-call-rate-threshold: 50
+    slow-call-duration-threshold: 2s
+    minimum-number-of-calls: 10
+    sliding-window-size: 100
+  
+  # Retry configuration aligned with Istio
+  retry:
+    max-attempts: 3
+    wait-duration: 100ms
+    exponential-backoff-multiplier: 2
+  
+  # Rate limiting configuration
+  rate-limit:
+    enabled: true
+    requests-per-second: 100
+    burst-capacity: 200
+
+# Tracing configuration for Istio/Jaeger
+tracing:
+  jaeger:
+    enabled: true
+    endpoint: ${JAEGER_ENDPOINT:http://jaeger-collector.istio-system.svc.cluster.local:14268/api/traces}
+    service-name: ${spring.application.name}
+    sampler:
+      type: const
+      param: 1.0  # Sample 100% for development
+    reporter:
+      log-spans: false
+      max-queue-size: 10000
+      flush-interval: 1s
+    tags:
+      environment: ${ENVIRONMENT:development}
+      version: ${APP_VERSION:1.0.0}
+      namespace: ${POD_NAMESPACE:default}
+      node: ${NODE_NAME:unknown}
+
+# Security configuration for service mesh
+security:
+  # CORS configuration for service mesh
+  cors:
+    allowed-origins: 
+      - https://app.trademaster.com
+      - https://admin.trademaster.com
+      - https://dashboard.trademaster.com
+    allowed-methods: GET,POST,PUT,DELETE,OPTIONS,HEAD
+    allowed-headers: 
+      - Authorization
+      - Content-Type
+      - X-Requested-With
+      - X-User-ID
+      - X-Request-ID
+      - X-Broker-Type
+      - X-Auth-Method
+      - X-Forwarded-For
+      - X-Forwarded-Proto
+      - X-Real-IP
+    allow-credentials: true
+    max-age: 3600
+  
+  # Headers configuration for service mesh
+  headers:
+    frame-options: DENY
+    content-type-options: nosniff
+    xss-protection: "1; mode=block"
+    referrer-policy: strict-origin-when-cross-origin
+    content-security-policy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+
+# Logging configuration for service mesh
+logging:
+  level:
+    # Istio-related logging
+    io.istio: INFO
+    org.springframework.cloud.kubernetes: INFO
+    org.springframework.boot.actuate: INFO
+    org.springframework.security: INFO
+    
+    # Application logging
+    com.trademaster.brokerauth: INFO
+    org.springframework.web: INFO
+    org.springframework.web.filter.CommonsRequestLoggingFilter: DEBUG
+    
+    # Tracing logging
+    brave: INFO
+    zipkin: INFO
+    
+    # Database logging (reduced for performance)
+    org.springframework.jdbc: WARN
+    org.hibernate.SQL: WARN
+    
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} [%X{traceId:-},%X{spanId:-}] [%X{userId:-},%X{brokerType:-}] %m%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} ${LOG_LEVEL_PATTERN:-%5p} ${PID:- } --- [%t] %-40.40logger{39} : [%X{traceId:-},%X{spanId:-}] [%X{userId:-},%X{brokerType:-}] %m%n"
+  
+  # Structured logging for service mesh
+  structured:
+    enabled: true
+    format: json
+    include:
+      - timestamp
+      - level
+      - thread
+      - logger
+      - message
+      - mdc
+      - exception
+
+# Resilience4j configuration aligned with Istio
+resilience4j:
+  circuitbreaker:
+    instances:
+      brokerAuthService:
+        register-health-indicator: true
+        sliding-window-size: 100
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 10
+        automatic-transition-from-open-to-half-open-enabled: true
+  
+  retry:
+    instances:
+      brokerAuthService:
+        max-attempts: 3
+        wait-duration: 100ms
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+          - java.io.IOException
+  
+  ratelimiter:
+    instances:
+      brokerAuthService:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 0s
+        register-health-indicator: true
+  
+  bulkhead:
+    instances:
+      brokerAuthService:
+        max-concurrent-calls: 50
+        max-wait-duration: 100ms
+
+# Database configuration optimized for service mesh
+spring:
+  datasource:
+    # Connection pooling optimized for service mesh
+    hikari:
+      pool-name: BrokerAuthHikariCP-Istio
+      maximum-pool-size: 20  # Reduced for service mesh
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      validation-timeout: 5000
+      leak-detection-threshold: 60000
+      connection-test-query: SELECT 1
+      
+  # JPA configuration for service mesh
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+        connection:
+          provider_disables_autocommit: true
+        cache:
+          use_second_level_cache: true
+          use_query_cache: true
+          region:
+            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+
+# Redis configuration for service mesh
+spring:
+  data:
+    redis:
+      # Connection configuration
+      timeout: 2000ms
+      connect-timeout: 2000ms
+      
+      # Lettuce pool configuration
+      lettuce:
+        pool:
+          max-active: 10  # Reduced for service mesh
+          max-idle: 5
+          min-idle: 2
+          max-wait: 2000ms
+          time-between-eviction-runs: 30s
+        cluster:
+          refresh:
+            adaptive: true
+            period: 30s
+
+# HTTP client configuration for external broker APIs
+http:
+  client:
+    connect-timeout: 10s
+    read-timeout: 30s
+    max-connections: 100
+    max-connections-per-route: 20
+    connection-request-timeout: 5s
+    socket-timeout: 30s
+    
+    # Retry configuration
+    retry:
+      enabled: true
+      max-attempts: 3
+      backoff-delay: 1s
+      backoff-multiplier: 2
+    
+    # Circuit breaker configuration
+    circuit-breaker:
+      enabled: true
+      failure-threshold: 5
+      recovery-timeout: 30s
+      slow-call-threshold: 10s
+
+# Custom application configuration
+app:
+  # Service mesh metadata
+  service-mesh:
+    provider: istio
+    version: "1.19"
+    namespace: ${POD_NAMESPACE:trademaster}
+    cluster: ${CLUSTER_NAME:development}
+  
+  # Feature flags for service mesh
+  features:
+    service-mesh-enabled: true
+    mutual-tls-enabled: true
+    distributed-tracing-enabled: true
+    circuit-breaker-enabled: true
+    rate-limiting-enabled: true
+    observability-enhanced: true
+    
+  # Performance configuration
+  performance:
+    async-enabled: true
+    caching-enabled: true
+    compression-enabled: true
+    
+  # Security configuration  
+  security:
+    strict-transport-security: true
+    content-security-policy: true
+    x-frame-options: DENY

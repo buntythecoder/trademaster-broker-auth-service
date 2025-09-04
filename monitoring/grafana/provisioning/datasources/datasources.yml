@@ -1,0 +1,69 @@
+apiVersion: 1
+
+datasources:
+  # Prometheus datasource
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: '15s'
+      queryTimeout: '60s'
+      httpMethod: 'POST'
+      manageAlerts: false
+      prometheusType: 'Prometheus'
+      prometheusVersion: '2.45.0'
+      cacheLevel: 'High'
+      incrementalQuerying: true
+      incrementalQueryOverlapWindow: '10m'
+
+  # Loki datasource for logs
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - datasourceUid: 'jaeger_uid'
+          matcherRegex: 'trace_id=([A-Za-z0-9]+)'
+          name: 'TraceID'
+          url: '$${__value.raw}'
+
+  # Jaeger datasource for tracing
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    uid: 'jaeger_uid'
+    editable: true
+    jsonData:
+      tracesToLogs:
+        datasourceUid: 'loki'
+        tags: ['job', 'instance', 'pod', 'namespace']
+        mappedTags: [
+          { key: 'service.name', value: 'service' }
+        ]
+        mapTagNamesEnabled: false
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: false
+        filterBySpanID: false
+
+  # Alertmanager datasource
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: true
+    jsonData:
+      implementation: 'prometheus'
+
+  # TestData datasource for testing
+  - name: TestData
+    type: testdata
+    access: proxy
+    editable: false

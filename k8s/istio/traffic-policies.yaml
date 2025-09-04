@@ -1,0 +1,448 @@
+# TradeMaster Broker Auth Service - Istio Traffic Management Policies
+# Advanced traffic management, fault injection, and circuit breaker configuration
+
+apiVersion: networking.istio.io/v1beta1
+kind: EnvoyFilter
+metadata:
+  name: broker-auth-rate-limit
+  namespace: trademaster
+spec:
+  workloadSelector:
+    labels:
+      app: broker-auth-service
+  configPatches:
+  # Rate limiting configuration
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.local_ratelimit
+        typed_config:
+          "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+          type_url: type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+          value:
+            stat_prefix: broker_auth_rate_limiter
+            token_bucket:
+              max_tokens: 1000
+              tokens_per_fill: 100
+              fill_interval: 1s
+            filter_enabled:
+              runtime_key: broker_auth_rate_limit_enabled
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            filter_enforced:
+              runtime_key: broker_auth_rate_limit_enforced
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            response_headers_to_add:
+            - append: false
+              header:
+                key: x-local-rate-limit
+                value: 'true'
+
+---
+# Circuit breaker configuration
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: broker-auth-circuit-breaker
+  namespace: trademaster
+spec:
+  host: broker-auth-service.trademaster.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+        keepAlive:
+          time: 7200s
+          interval: 75s
+          probes: 3
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+        minHealthPercent: 50
+        h2UpgradePolicy: UPGRADE
+        useClientProtocol: true
+    loadBalancer:
+      simple: LEAST_REQUEST
+      consistentHash:
+        httpHeaderName: "x-user-id"
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+      splitExternalLocalOriginErrors: false
+
+---
+# Retry policy for resilience
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: broker-auth-retry-policy
+  namespace: trademaster
+spec:
+  hosts:
+  - broker-auth-service.trademaster.svc.cluster.local
+  http:
+  # Authentication endpoints - more aggressive retries
+  - match:
+    - uri:
+        prefix: /api/v1/auth
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+    timeout: 30s
+    retries:
+      attempts: 5
+      perTryTimeout: 5s
+      retryOn: 5xx,reset,connect-failure,refused-stream
+      retryRemoteLocalities: true
+  # Session management - moderate retries
+  - match:
+    - uri:
+        prefix: /api/v1/sessions
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+    timeout: 20s
+    retries:
+      attempts: 3
+      perTryTimeout: 6s
+      retryOn: 5xx,gateway-error,connect-failure,refused-stream
+  # Health checks - minimal retries
+  - match:
+    - uri:
+        prefix: /actuator/health
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+    timeout: 5s
+    retries:
+      attempts: 2
+      perTryTimeout: 2s
+      retryOn: connect-failure,refused-stream
+
+---
+# Fault injection for chaos engineering
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: broker-auth-fault-injection
+  namespace: trademaster
+spec:
+  hosts:
+  - broker-auth-service.trademaster.svc.cluster.local
+  http:
+  # Inject faults only for specific test scenarios
+  - match:
+    - headers:
+        x-chaos-test:
+          exact: "true"
+    fault:
+      delay:
+        percentage:
+          value: 10.0
+        fixedDelay: 5s
+      abort:
+        percentage:
+          value: 5.0
+        httpStatus: 500
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+  # Normal traffic without faults
+  - route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+
+---
+# Traffic splitting for canary deployments
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: broker-auth-canary
+  namespace: trademaster
+spec:
+  hosts:
+  - broker-auth-service.trademaster.svc.cluster.local
+  http:
+  # Canary deployment routing (90% v1, 10% v2)
+  - match:
+    - headers:
+        x-canary:
+          exact: "true"
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v2
+      weight: 100
+  # Regular traffic routing with weight distribution
+  - route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v1
+      weight: 90
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v2
+      weight: 10
+
+---
+# Service mesh observability configuration
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: broker-auth-telemetry
+  namespace: trademaster
+spec:
+  selector:
+    matchLabels:
+      app: broker-auth-service
+  metrics:
+  - providers:
+    - name: prometheus
+  - overrides:
+    - match:
+        metric: ALL_METRICS
+      tagOverrides:
+        request_id:
+          operation: UPSERT
+          value: "%REQ(x-request-id)%"
+        user_id:
+          operation: UPSERT
+          value: "%REQ(x-user-id)%"
+        broker_type:
+          operation: UPSERT
+          value: "%REQ(x-broker-type)%"
+  tracing:
+  - providers:
+    - name: jaeger
+  - customTags:
+      user_id:
+        header:
+          name: x-user-id
+      broker_type:
+        header:
+          name: x-broker-type
+      request_id:
+        header:
+          name: x-request-id
+  accessLogging:
+  - providers:
+    - name: otel
+
+---
+# Custom metrics configuration
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: broker-auth-custom-metrics
+  namespace: trademaster
+spec:
+  selector:
+    matchLabels:
+      app: broker-auth-service
+  metrics:
+  - providers:
+    - name: prometheus
+  - overrides:
+    - match:
+        metric: requests_total
+      tagOverrides:
+        broker_type:
+          operation: UPSERT
+          value: "%REQ(x-broker-type)%"
+        auth_method:
+          operation: UPSERT
+          value: "%REQ(x-auth-method)%"
+        user_type:
+          operation: UPSERT
+          value: "%REQ(x-user-type)%"
+
+---
+# Workload Entry for external broker APIs
+apiVersion: networking.istio.io/v1beta1
+kind: WorkloadEntry
+metadata:
+  name: zerodha-api
+  namespace: trademaster
+spec:
+  address: api.kite.trade
+  ports:
+    https: 443
+  labels:
+    app: zerodha-api
+    type: external-broker
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: WorkloadEntry
+metadata:
+  name: upstox-api
+  namespace: trademaster
+spec:
+  address: api.upstox.com
+  ports:
+    https: 443
+  labels:
+    app: upstox-api
+    type: external-broker
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: WorkloadEntry
+metadata:
+  name: angel-one-api
+  namespace: trademaster
+spec:
+  address: apiconnect.angelbroking.com
+  ports:
+    https: 443
+  labels:
+    app: angel-one-api
+    type: external-broker
+
+---
+# Service Entry for external broker APIs
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: external-broker-apis
+  namespace: trademaster
+spec:
+  hosts:
+  - api.kite.trade
+  - api.upstox.com
+  - apiconnect.angelbroking.com
+  - api.icicidirect.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 80
+    name: http
+    protocol: HTTP
+  location: MESH_EXTERNAL
+  resolution: DNS
+
+---
+# DestinationRule for external broker APIs
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: external-broker-apis
+  namespace: trademaster
+spec:
+  host: "*.kite.trade"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 5
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+
+---
+# Network Policy for additional security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: broker-auth-network-policy
+  namespace: trademaster
+spec:
+  podSelector:
+    matchLabels:
+      app: broker-auth-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from istio-proxy
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: istio-system
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+  # Allow traffic from other services in trademaster namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: trademaster
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Allow monitoring scraping
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8081
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS to external APIs
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow database access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow Redis access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: trademaster
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow Vault access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: vault
+    ports:
+    - protocol: TCP
+      port: 8200

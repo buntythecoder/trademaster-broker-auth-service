@@ -1,0 +1,390 @@
+# TradeMaster Broker Auth Service - CI/CD Pipeline
+# Enterprise-grade pipeline with security scanning, quality gates, and deployment automation
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'release/*', 'hotfix/*' ]
+  pull_request:
+    branches: [ main, develop ]
+  release:
+    types: [ published ]
+
+env:
+  JAVA_VERSION: '24'
+  JAVA_DISTRIBUTION: 'temurin'
+  GRADLE_VERSION: 'wrapper'
+
+jobs:
+  # ========== SECURITY & QUALITY CHECKS ==========
+  security-scan:
+    name: 🛡️ Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for SonarQube
+    
+    - name: ☕ Set up JDK 24
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: ${{ env.JAVA_DISTRIBUTION }}
+    
+    - name: 📋 Setup Gradle
+      uses: gradle/gradle-build-action@v2
+      with:
+        gradle-version: ${{ env.GRADLE_VERSION }}
+    
+    - name: 🔍 OWASP Dependency Check
+      run: ./gradlew dependencyCheckAnalyze
+      env:
+        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    
+    - name: 📤 Upload OWASP Report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: owasp-dependency-check-report
+        path: build/reports/
+    
+    - name: ⚡ Fail on High/Critical Vulnerabilities
+      run: ./gradlew dependencyCheckAnalyze
+      continue-on-error: false
+
+  code-quality:
+    name: 🔍 Code Quality Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: security-scan
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK 24
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: ${{ env.JAVA_DISTRIBUTION }}
+    
+    - name: 📋 Setup Gradle
+      uses: gradle/gradle-build-action@v2
+    
+    - name: 🧪 Run Tests with Coverage
+      run: ./gradlew test jacocoTestReport
+      env:
+        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+        SPRING_DATASOURCE_USERNAME: testuser
+        SPRING_DATASOURCE_PASSWORD: testpass
+        SPRING_DATA_REDIS_HOST: localhost
+        SPRING_DATA_REDIS_PORT: 6379
+        BROKER_AUTH_ENCRYPTION_KEY: test_encryption_key_32_chars_long_secure
+        SECURITY_JWT_SECRET: test_jwt_secret_for_ci_testing_secure_long_key
+        CI: true
+    
+    - name: 📊 SonarQube Analysis
+      run: ./gradlew sonar
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+    
+    - name: ✅ Quality Gate Check
+      uses: sonarqube-quality-gate-action@master
+      timeout-minutes: 5
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+    
+    - name: 📤 Upload Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: |
+          build/reports/tests/
+          build/reports/jacoco/
+    
+    - name: 📊 Publish Test Results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      if: always()
+      with:
+        files: build/test-results/**/*.xml
+
+  # ========== BUILD & PACKAGE ==========
+  build:
+    name: 🏗️ Build Application
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [security-scan, code-quality]
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: ☕ Set up JDK 24
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: ${{ env.JAVA_DISTRIBUTION }}
+    
+    - name: 📋 Setup Gradle
+      uses: gradle/gradle-build-action@v2
+    
+    - name: 🔨 Build Application
+      run: ./gradlew build -x test
+    
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: 🔐 Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ secrets.CONTAINER_REGISTRY }}
+        username: ${{ secrets.CONTAINER_REGISTRY_USERNAME }}
+        password: ${{ secrets.CONTAINER_REGISTRY_TOKEN }}
+    
+    - name: 🏷️ Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.CONTAINER_REGISTRY }}/trademaster/broker-auth-service
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix=git-
+    
+    - name: 🔨 Build and Push Docker Image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: 📤 Upload Build Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+          build/libs/
+          build/reports/
+          Dockerfile
+          docker-compose.yml
+
+  # ========== SECURITY CONTAINER SCAN ==========
+  container-security:
+    name: 🛡️ Container Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    
+    steps:
+    - name: 🔍 Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ needs.build.outputs.image-tag }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: 📤 Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # ========== INTEGRATION TESTS ==========
+  integration-tests:
+    name: 🧪 Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: testdb
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: ☕ Set up JDK 24
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: ${{ env.JAVA_DISTRIBUTION }}
+    
+    - name: 📋 Setup Gradle
+      uses: gradle/gradle-build-action@v2
+    
+    - name: 🧪 Run Integration Tests
+      run: ./gradlew integrationTest
+      env:
+        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/testdb
+        SPRING_DATASOURCE_USERNAME: testuser
+        SPRING_DATASOURCE_PASSWORD: testpass
+        SPRING_DATA_REDIS_HOST: localhost
+        SPRING_DATA_REDIS_PORT: 6379
+        BROKER_AUTH_ENCRYPTION_KEY: test_encryption_key_32_chars_long_secure
+        SECURITY_JWT_SECRET: test_jwt_secret_for_integration_testing_secure_long_key
+    
+    - name: 📤 Upload Integration Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: integration-test-results
+        path: build/reports/tests/integrationTest/
+
+  # ========== DEPLOYMENT ==========
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, integration-tests, container-security]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🚀 Deploy to Staging
+      run: |
+        echo "Deploying to staging environment..."
+        echo "Image: ${{ needs.build.outputs.image-tag }}"
+        # Add your deployment logic here
+        # Examples: kubectl, helm, terraform, etc.
+    
+    - name: 🔍 Smoke Tests
+      run: |
+        echo "Running staging smoke tests..."
+        # Add smoke tests for staging environment
+
+  deploy-production:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, integration-tests, container-security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: ✅ Production Deployment Checks
+      run: |
+        echo "Running pre-deployment checks..."
+        # Add production readiness checks
+    
+    - name: 🚀 Blue/Green Deployment
+      run: |
+        echo "Deploying to production with blue/green strategy..."
+        echo "Image: ${{ needs.build.outputs.image-tag }}"
+        # Add your blue/green deployment logic
+    
+    - name: 🔍 Production Smoke Tests
+      run: |
+        echo "Running production smoke tests..."
+        # Add critical path tests for production
+    
+    - name: 📊 Update Monitoring
+      run: |
+        echo "Updating monitoring dashboards and alerts..."
+        # Update Grafana dashboards, set up alerts, etc.
+
+  # ========== RELEASE MANAGEMENT ==========
+  release:
+    name: 📦 Create Release
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 📦 Create Release Notes
+      run: |
+        echo "Creating release notes for ${{ github.event.release.tag_name }}"
+        # Auto-generate release notes, changelog, etc.
+    
+    - name: 📢 Notify Teams
+      run: |
+        echo "Notifying teams of successful release..."
+        # Send Slack notifications, update status pages, etc.
+
+  # ========== CLEANUP ==========
+  cleanup:
+    name: 🧹 Cleanup
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production, release]
+    if: always()
+    
+    steps:
+    - name: 🧹 Cleanup Resources
+      run: |
+        echo "Cleaning up temporary resources..."
+        # Cleanup test databases, temp files, etc.

@@ -1,0 +1,441 @@
+# TradeMaster Broker Auth Service - Istio Service Mesh Configuration
+# Complete service mesh setup with security, traffic management, and observability
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trademaster
+  labels:
+    istio-injection: enabled
+    name: trademaster
+    environment: production
+    team: platform
+
+---
+# Service Account for the broker auth service
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: broker-auth-service
+  namespace: trademaster
+  labels:
+    app: broker-auth-service
+    version: v1
+    component: authentication
+
+---
+# Kubernetes Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broker-auth-service
+  namespace: trademaster
+  labels:
+    app: broker-auth-service
+    version: v1
+    component: authentication
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: broker-auth-service
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: broker-auth-service
+        version: v1
+        component: authentication
+      annotations:
+        # Istio sidecar configuration
+        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/proxyCPU: "100m"
+        sidecar.istio.io/proxyMemory: "128Mi"
+        # Prometheus scraping
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8080"
+        # Security annotations
+        container.apparmor.security.beta.kubernetes.io/broker-auth-service: runtime/default
+    spec:
+      serviceAccountName: broker-auth-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: broker-auth-service
+        image: trademaster/broker-auth-service:1.0.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8081
+          name: management
+          protocol: TCP
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "vault,prod,istio"
+        - name: VAULT_URI
+          valueFrom:
+            secretKeyRef:
+              name: vault-config
+              key: vault-uri
+        - name: VAULT_ROLE_ID
+          valueFrom:
+            secretKeyRef:
+              name: vault-config
+              key: vault-role-id
+        - name: VAULT_SECRET_ID
+          valueFrom:
+            secretKeyRef:
+              name: vault-config
+              key: vault-secret-id
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-config
+              key: database-url
+        - name: DATABASE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: database-config
+              key: database-username
+        - name: REDIS_HOST
+          value: "redis-service.trademaster.svc.cluster.local"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: JAEGER_ENDPOINT
+          value: "http://jaeger-collector.istio-system.svc.cluster.local:14268/api/traces"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: management
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: management
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: management
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: logs
+          mountPath: /logs
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: "trademaster.com/dedicated"
+        operator: "Equal"
+        value: "broker-auth"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - broker-auth-service
+              topologyKey: kubernetes.io/hostname
+
+---
+# Kubernetes Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker-auth-service
+  namespace: trademaster
+  labels:
+    app: broker-auth-service
+    service: broker-auth-service
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+    protocol: TCP
+  - port: 8081
+    targetPort: 8081
+    name: management
+    protocol: TCP
+  selector:
+    app: broker-auth-service
+
+---
+# Istio DestinationRule for traffic management
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: broker-auth-service
+  namespace: trademaster
+spec:
+  host: broker-auth-service.trademaster.svc.cluster.local
+  trafficPolicy:
+    # Connection pooling
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+        keepAlive:
+          time: 7200s
+          interval: 75s
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 50
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+        minHealthPercent: 50
+    # Load balancing
+    loadBalancer:
+      simple: LEAST_REQUEST
+    # Outlier detection
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+    trafficPolicy:
+      connectionPool:
+        tcp:
+          maxConnections: 50
+
+---
+# Istio VirtualService for routing and traffic management
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: broker-auth-service
+  namespace: trademaster
+spec:
+  hosts:
+  - broker-auth-service.trademaster.svc.cluster.local
+  - auth.trademaster.com
+  http:
+  # Health check routing
+  - match:
+    - uri:
+        prefix: /actuator/health
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v1
+    timeout: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,refused-stream
+  # Management endpoints (restricted)
+  - match:
+    - uri:
+        prefix: /actuator
+    - headers:
+        x-management-token:
+          exact: "management-access-token"
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v1
+  # API routing with rate limiting
+  - match:
+    - uri:
+        prefix: /api/v1
+    route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v1
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+      retryOn: 5xx,gateway-error,connect-failure,refused-stream
+    fault:
+      delay:
+        percentage:
+          value: 0.1
+        fixedDelay: 5s
+  # Default routing
+  - route:
+    - destination:
+        host: broker-auth-service.trademaster.svc.cluster.local
+        subset: v1
+
+---
+# Istio Gateway for external access
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: broker-auth-gateway
+  namespace: trademaster
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: trademaster-tls-secret
+    hosts:
+    - auth.trademaster.com
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - auth.trademaster.com
+    # HTTP to HTTPS redirect
+    tls:
+      httpsRedirect: true
+
+---
+# Istio AuthorizationPolicy for security
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: broker-auth-policy
+  namespace: trademaster
+spec:
+  selector:
+    matchLabels:
+      app: broker-auth-service
+  rules:
+  # Allow health checks from istio-proxy
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/istio-system/sa/istio-proxy-service-account
+    to:
+    - operation:
+        paths:
+        - /actuator/health/*
+        methods:
+        - GET
+  # Allow authenticated API access
+  - from:
+    - source:
+        requestPrincipals:
+        - "*"
+    to:
+    - operation:
+        paths:
+        - /api/v1/*
+        methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+    when:
+    - key: request.headers[authorization]
+      values:
+      - "Bearer *"
+  # Allow Prometheus scraping
+  - from:
+    - source:
+        namespaces:
+        - istio-system
+        - monitoring
+    to:
+    - operation:
+        paths:
+        - /actuator/prometheus
+        methods:
+        - GET
+  # Deny all other requests
+  - {}
+
+---
+# Istio PeerAuthentication for mutual TLS
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: broker-auth-mtls
+  namespace: trademaster
+spec:
+  selector:
+    matchLabels:
+      app: broker-auth-service
+  mtls:
+    mode: STRICT
+
+---
+# Istio RequestAuthentication for JWT validation
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: broker-auth-jwt
+  namespace: trademaster
+spec:
+  selector:
+    matchLabels:
+      app: broker-auth-service
+  jwtRules:
+  - issuer: "https://auth.trademaster.com"
+    jwksUri: "https://auth.trademaster.com/.well-known/jwks.json"
+    audiences:
+    - "trademaster-api"
+    forwardOriginalToken: true

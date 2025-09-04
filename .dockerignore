@@ -1,0 +1,79 @@
+# Docker ignore file for TradeMaster Broker Auth Service
+
+# Build artifacts
+build/
+target/
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# Version control
+.git/
+.gitignore
+.hgignore
+.svn/
+
+# Documentation
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# Docker files (except the ones we need)
+Dockerfile.*
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yml
+
+# Test files and reports
+src/test/
+test-results/
+coverage/
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+tmp/
+
+# Node.js (if any frontend assets)
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Spring Boot
+application-*.yml
+application-*.properties
+!application.yml
+!application-docker.yml
+
+# Security sensitive files
+*.key
+*.pem
+*.p12
+*.jks
+secrets/

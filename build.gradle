@@ -1,0 +1,325 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.3'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'org.flywaydb.flyway' version '9.22.3'
+    // OWASP Dependency Check for Security Vulnerability Scanning
+    id 'org.owasp.dependencycheck' version '8.4.2'
+    // Jacoco for Test Coverage
+    id 'jacoco'
+    // SonarQube for Code Quality
+    id 'org.sonarqube' version '4.4.1.3373'
+}
+
+group = 'com.trademaster'
+version = '1.0.0'
+
+// MANDATORY: Java 24 configuration per TradeMaster Standards
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(24)
+    }
+}
+
+// MANDATORY: Enable preview features for Virtual Threads
+tasks.named('compileJava') {
+    options.compilerArgs += ['--enable-preview']
+}
+
+tasks.named('compileTestJava') {
+    options.compilerArgs += ['--enable-preview']
+}
+
+tasks.named('test') {
+    jvmArgs += ['--enable-preview']
+    useJUnitPlatform()
+}
+
+tasks.named('bootRun') {
+    jvmArgs += ['--enable-preview']
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Spring Cloud BOM for proper version management
+dependencyManagement {
+    imports {
+        mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2023.0.0'
+    }
+}
+
+dependencies {
+    // Spring Boot Core with Virtual Threads Support
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-cache'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // Spring Cloud Config Client for centralized configuration
+    implementation 'org.springframework.cloud:spring-cloud-starter-config'
+    
+    // Service Discovery for Config Server
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    
+    // Distributed Tracing
+    implementation 'io.micrometer:micrometer-tracing-bridge-brave'
+    implementation 'io.zipkin.reporter2:zipkin-reporter-brave'
+    
+    // Kafka for Event-Driven Architecture
+    implementation 'org.springframework.kafka:spring-kafka'
+    
+    // Database Support
+    implementation 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    
+    // Connection Pooling - Optimized for Virtual Threads
+    implementation 'com.zaxxer:HikariCP'
+    
+    // Prometheus Metrics - MANDATORY per TradeMaster Standards
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+    
+    // Jakarta/Java EE API for annotations (replaces javax.annotation)
+    implementation 'jakarta.annotation:jakarta.annotation-api'
+    
+    // Circuit Breaker and Resilience
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3'
+    implementation 'io.github.resilience4j:resilience4j-circuitbreaker'
+    implementation 'io.github.resilience4j:resilience4j-ratelimiter'
+    implementation 'io.github.resilience4j:resilience4j-retry'
+    implementation 'io.github.resilience4j:resilience4j-bulkhead'
+    
+    // OpenAPI Documentation
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0'
+    
+    // HTTP Client for Broker API Calls - MANDATORY: No WebFlux per TradeMaster Rule #1
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.apache.httpcomponents.client5:httpclient5:5.3'
+    
+    // Security and Encryption
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
+    
+    // JSON Processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    
+    // OpenTelemetry for Distributed Tracing (using BOM for version management)
+    implementation platform('io.opentelemetry:opentelemetry-bom:1.52.0')
+    implementation 'io.opentelemetry:opentelemetry-api'
+    implementation 'io.opentelemetry:opentelemetry-sdk'
+    implementation 'io.opentelemetry:opentelemetry-extension-trace-propagators'
+    
+    // HashiCorp Vault Integration for Secrets Management
+    implementation 'org.springframework.vault:spring-vault-core:3.1.0'
+    implementation 'org.springframework.cloud:spring-cloud-vault-config:4.1.0'
+    
+    // Lombok for Code Generation
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    
+    // Configuration Processor
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+    
+    // Testing Dependencies
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:kafka'
+    testImplementation 'com.github.tomakehurst:wiremock-jre8:2.35.0'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// MANDATORY: JVM Configuration for Virtual Threads per TradeMaster Standards
+tasks.withType(JavaExec) {
+    jvmArgs = [
+        '--enable-preview',
+        '-XX:+UseG1GC',
+        '-XX:+UseStringDeduplication',
+        '-XX:MaxGCPauseMillis=200',
+        '-Xms512m',
+        '-Xmx2g'
+    ]
+}
+
+// Flyway Configuration
+flyway {
+    url = 'jdbc:postgresql://localhost:5432/trademaster_broker_auth'
+    user = 'trademaster_user'
+    password = 'trademaster_password'
+    locations = ['classpath:db/migration']
+    baselineOnMigrate = true
+    validateOnMigrate = true
+}
+
+// Test Configuration
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat = "full"
+        showStandardStreams = false
+    }
+    systemProperty 'spring.profiles.active', 'test'
+    maxHeapSize = "1g"
+}
+
+// JAR Configuration
+jar {
+    enabled = false
+    archiveClassifier = ''
+}
+
+bootJar {
+    enabled = true
+    archiveClassifier = ''
+    layered {
+        enabled = true
+    }
+}
+
+// ===== SECURITY & QUALITY CONFIGURATION =====
+
+// OWASP Dependency Check Configuration
+dependencyCheck {
+    // Enable automatic updates of vulnerability database
+    autoUpdate = true
+    
+    // Formats for the report
+    formats = ['HTML', 'JSON', 'CSV']
+    
+    // Fail build if CVSS score is 7.0 or higher (High/Critical)
+    failBuildOnCVSS = 7.0
+    
+    // Suppress false positives (customize as needed)
+    suppressionFile = 'owasp-suppressions.xml'
+    
+    // Skip test scope dependencies (optional) - using correct property name
+    skipConfigurations = []
+    
+    // Analyzer configurations
+    analyzers {
+        // Disable analyzers that may cause false positives or performance issues
+        assemblyEnabled = false
+        nugetconfEnabled = false
+        centralEnabled = true
+        nexusEnabled = true
+        ossIndexEnabled = true
+    }
+    
+    // NVD API configuration (temporarily disabled for compilation test)
+    // nvdApiKey = System.getenv('NVD_API_KEY') ?: ''
+    // nvdApiDelay = 2000  // Delay between requests (milliseconds)
+}
+
+// Jacoco Test Coverage Configuration
+jacoco {
+    toolVersion = "0.8.8"
+}
+
+jacocoTestReport {
+    dependsOn test
+    
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+    
+    // Include all source files
+    executionData fileTree(project.rootDir.absolutePath).include("**/build/jacoco/*.exec")
+    
+    finalizedBy jacocoTestCoverageVerification
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    
+    violationRules {
+        rule {
+            limit {
+                // Require minimum 80% line coverage
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+        
+        rule {
+            limit {
+                // Require minimum 70% branch coverage
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.70
+            }
+        }
+        
+        rule {
+            // Exclude certain classes from coverage requirements
+            excludes = [
+                '*.Application',
+                '*.config.*Config*',
+                '*.dto.*',
+                '*.entity.*',
+                '*.exception.*Response',
+                '*.*Exception'
+            ]
+        }
+    }
+}
+
+// SonarQube Configuration
+sonar {
+    properties {
+        property "sonar.projectName", "TradeMaster Broker Auth Service"
+        property "sonar.projectKey", "trademaster:broker-auth-service"
+        property "sonar.host.url", System.getenv('SONAR_HOST_URL') ?: 'http://localhost:9000'
+        property "sonar.login", System.getenv('SONAR_TOKEN') ?: ''
+        
+        // Coverage reports
+        property "sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml"
+        
+        // Source and test directories
+        property "sonar.sources", "src/main/java"
+        property "sonar.tests", "src/test/java"
+        property "sonar.java.binaries", "build/classes/java/main"
+        property "sonar.java.test.binaries", "build/classes/java/test"
+        
+        // Quality gates
+        property "sonar.qualitygate.wait", "true"
+        
+        // Exclusions
+        property "sonar.exclusions", "**/Application.java,**/config/**/*Config.java,**/dto/**,**/entity/**"
+    }
+}
+
+// Custom task to run all quality checks
+task qualityCheck {
+    dependsOn dependencyCheckAnalyze, test, jacocoTestReport, jacocoTestCoverageVerification
+    description = 'Runs all quality and security checks'
+    group = 'verification'
+}
+
+// Custom task for security scan only
+task securityScan {
+    dependsOn dependencyCheckAnalyze
+    description = 'Runs security vulnerability scanning'
+    group = 'verification'
+}
+
+// Make test depend on quality checks in CI environment
+if (System.getenv('CI') == 'true') {
+    test.dependsOn dependencyCheckAnalyze
+}
+
+// Ensure tests run before building
+build.dependsOn test

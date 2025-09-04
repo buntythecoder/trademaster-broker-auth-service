@@ -1,0 +1,91 @@
+# TradeMaster Broker Auth Service - Spring Cloud Config Bootstrap
+# MANDATORY: This file loads BEFORE application.yml and configures Config Server connection
+
+spring:
+  application:
+    name: broker-auth-service
+  
+  # MANDATORY: Spring Cloud Config Client Configuration
+  cloud:
+    config:
+      # Config Server connection details
+      uri: ${CONFIG_SERVER_URL:http://localhost:8888/config}
+      name: ${spring.application.name}
+      profile: ${spring.profiles.active:dev}
+      label: ${CONFIG_BRANCH:main}
+      
+      # Connection settings
+      timeout: 10000
+      retry:
+        initial-interval: 2000
+        max-interval: 10000
+        max-attempts: 6
+        multiplier: 1.2
+      
+      # Fail fast if config server unavailable (set to false for local dev)
+      fail-fast: ${CONFIG_FAIL_FAST:true}
+      
+      # Discovery service integration (if using Eureka)
+      discovery:
+        enabled: ${CONFIG_DISCOVERY_ENABLED:true}
+        service-id: config-server
+      
+      # Security for config server (if authentication enabled)
+      username: ${CONFIG_SERVER_USERNAME:config-admin}
+      password: ${CONFIG_SERVER_PASSWORD:config-secret-2024}
+
+  # Profile activation
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+# Eureka Service Discovery (for Config Server discovery)
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    enabled: ${EUREKA_ENABLED:true}
+    register-with-eureka: false  # Only register after config is loaded
+    fetch-registry: true
+    initial-instance-info-replication-interval-seconds: 5
+
+# Basic logging for bootstrap phase
+logging:
+  level:
+    org.springframework.cloud.config: INFO
+    com.trademaster.brokerauth: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [BOOTSTRAP] %-5level %logger{36} - %msg%n"
+
+# Environment-specific overrides
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  cloud:
+    config:
+      fail-fast: false  # More lenient for development
+      discovery:
+        enabled: false  # Use direct URI for dev
+      
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+  cloud:
+    config:
+      fail-fast: true   # Strict for testing
+      profile: test
+      
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cloud:
+    config:
+      fail-fast: true   # Critical for production
+      profile: prod
+      # Production config server might use HTTPS
+      uri: ${CONFIG_SERVER_URL:https://config-server:8888/config}

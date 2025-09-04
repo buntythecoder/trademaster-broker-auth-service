@@ -1,0 +1,273 @@
+# TradeMaster Broker Auth Service - Git Ignore
+
+# ===== BUILD & GRADLE =====
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Gradle Wrapper
+gradle-wrapper.properties
+gradlew
+gradlew.bat
+
+# ===== JAVA & SPRING BOOT =====
+*.jar
+*.war
+*.ear
+*.class
+
+# Spring Boot
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ===== IDE FILES =====
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+
+# ===== LOGS & TEMP FILES =====
+*.log
+*.tmp
+*.temp
+logs/
+temp/
+tmp/
+
+# ===== DATABASE =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== SECURITY & CREDENTIALS =====
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Secrets and keys
+secrets/
+keys/
+*.key
+*.pem
+*.p12
+*.jks
+
+# Application properties with secrets
+application-secrets.yml
+application-secrets.properties
+
+# ===== TEST REPORTS =====
+# Test results
+/test-results/
+/test-output/
+
+# Coverage reports
+/coverage/
+jacoco.exec
+*.exec
+
+# SonarQube
+.sonar/
+sonar-project.properties
+
+# OWASP Dependency Check
+dependency-check-report.html
+dependency-check-report.json
+dependency-check-report.csv
+
+# ===== DOCUMENTATION TEMP FILES =====
+# Temporary documentation files
+*TEMP*.md
+*DRAFT*.md
+*STATUS*.md
+*AUDIT*.md
+*SUMMARY*.md
+COMPREHENSIVE_*.md
+CLEAN_*.md
+*_COMPLETE_*.md
+
+# API documentation temp
+swagger-ui-temp/
+api-docs-temp/
+
+# ===== DOCKER & KUBERNETES =====
+# Docker temp files
+.docker/
+docker-compose.override.yml
+
+# Kubernetes secrets
+k8s-secrets.yml
+secrets.yml
+
+# ===== MONITORING & OBSERVABILITY =====
+# Prometheus data
+prometheus_data/
+
+# Grafana data
+grafana_data/
+
+# Zipkin data  
+zipkin_data/
+
+# ===== BROKER AUTH SPECIFIC =====
+# Broker API test responses
+broker-responses/
+test-responses/
+
+# Rate limiting data
+rate-limit-data/
+
+# Session test data  
+session-data/
+
+# Encryption test keys
+test-keys/
+encryption-test/
+
+# Circuit breaker state
+circuit-breaker-state/
+
+# ===== OS SPECIFIC =====
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.nfs*
+
+# ===== MISC =====
+*.swp
+*.swo
+*~.nib
+local.properties
+.loadpath
+.recommenders
+
+# External tool builders
+.externalToolBuilders/
+
+# Locally stored "Eclipse launch configurations"
+*.launch
+
+# PyDev specific (Eclipse plugin)
+*.pydevproject
+
+# CDT-specific (Eclipse plugin)
+.cproject
+
+# CDT- autotools
+.autotools
+
+# Java annotation processor (APT)
+.factorypath
+
+# PDT-specific (Eclipse plugin)
+.buildpath
+
+# sbteclipse plugin
+.target
+
+# Tern plugin
+.tern-project
+
+# TeXlipse plugin
+.texlipse
+
+# STS (Spring Tool Suite)
+.springBeans
+
+# Code Recommenders
+.recommenders/
+
+# Annotation Processing
+.apt_generated/
+.apt_generated_test/
+
+# Scala IDE specific (Scala & Java development for Eclipse)
+.cache-main
+.scala_dependencies
+.worksheet
+
+# ===== CUSTOM EXCLUSIONS =====
+# Exclude any backup files
+*.backup
+*.bak
+*.orig
+
+# Exclude any patch files
+*.patch
+*.diff
+
+# Performance test results
+performance-results/
+load-test-results/
+
+# Config backups
+config-backup/
+application-*.backup
+
+# ===== KEEP THESE FILES =====
+# Keep important documentation
+!README.md
+!CHANGELOG.md
+!LICENSE
+!docs/
+!src/
+
+# Keep configuration templates
+!*.example
+!*.template
+
+# Keep Docker files
+!Dockerfile*
+!docker-compose*.yml
+
+# Keep Kubernetes manifests
+!k8s/
+!kubernetes/
+
+# Keep Gradle wrapper
+!gradle/wrapper/gradle-wrapper.properties

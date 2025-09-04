@@ -1,0 +1,238 @@
+# HashiCorp Vault Configuration for TradeMaster Broker Auth Service
+# This profile enables secure secrets management using HashiCorp Vault
+
+spring:
+  application:
+    name: trademaster-broker-auth-service
+  
+  config:
+    import: "vault://"
+  
+  cloud:
+    vault:
+      enabled: true
+      fail-fast: true
+      
+      # Connection Configuration
+      uri: ${VAULT_URI:http://localhost:8200}
+      connection-timeout: 5000
+      read-timeout: 15000
+      
+      # Authentication Configuration
+      authentication: APPROLE  # or TOKEN for development
+      app-role:
+        role-id: ${VAULT_ROLE_ID:}
+        secret-id: ${VAULT_SECRET_ID:}
+        path: approle
+      token: ${VAULT_TOKEN:}
+      
+      # Secret Configuration
+      kv:
+        enabled: true
+        backend: secret
+        profile-separator: '/'
+        default-context: broker-auth
+        application-name: trademaster-broker-auth-service
+        profiles: ${spring.profiles.active:default}
+      
+      # SSL Configuration (for production)
+      ssl:
+        cert-auth-path: cert
+        trust-store: ${VAULT_TRUSTSTORE_PATH:}
+        trust-store-password: ${VAULT_TRUSTSTORE_PASSWORD:}
+        key-store: ${VAULT_KEYSTORE_PATH:}
+        key-store-password: ${VAULT_KEYSTORE_PASSWORD:}
+      
+      # Session Configuration
+      session:
+        timeout: 30s
+        heartbeat-enabled: true
+        heartbeat-interval: 10s
+
+# Vault Integration Configuration
+vault:
+  enabled: true
+  
+  # Connection Settings
+  uri: ${VAULT_URI:http://localhost:8200}
+  connection-timeout: 5s
+  read-timeout: 15s
+  
+  # Authentication Settings
+  token: ${VAULT_TOKEN:}
+  app-role:
+    role-id: ${VAULT_ROLE_ID:}
+    secret-id: ${VAULT_SECRET_ID:}
+    path: approle
+  
+  # Secret Management
+  secret-path: secret/broker-auth
+  enforce-secrets: true
+  
+  # Caching Configuration
+  cache:
+    enabled: true
+    ttl-minutes: 5
+  
+  # Health Check Configuration
+  health:
+    enabled: true
+    path: sys/health
+
+# Override application properties to use Vault secrets
+broker:
+  auth:
+    # Encryption key will be retrieved from Vault
+    encryption:
+      key: ${vault.secret.encryption-key:}
+      algorithm: AES
+      mode: GCM
+      key-size: 256
+    
+    # Session configuration
+    session:
+      timeout: 24h
+      refresh-threshold: 1h
+      cleanup-interval: 1h
+    
+    # Rate limiting
+    rate-limit:
+      enabled: true
+      requests-per-minute: 100
+      burst-capacity: 20
+
+# Security Configuration
+security:
+  jwt:
+    # JWT secret will be retrieved from Vault
+    secret: ${vault.secret.jwt-secret:}
+    expiration: 3600000  # 1 hour
+    refresh-expiration: 86400000  # 24 hours
+  
+  # CORS Configuration
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+    allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+    allowed-headers: "*"
+    allow-credentials: true
+    max-age: 3600
+
+# Database Configuration with Vault Integration
+spring:
+  datasource:
+    # Database password will be retrieved from Vault if available
+    password: ${vault.secret.database-password:${DATABASE_PASSWORD:}}
+    username: ${DATABASE_USERNAME:trademaster_user}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/trademaster_broker_auth}
+    driver-class-name: org.postgresql.Driver
+    
+    # HikariCP Configuration optimized for Virtual Threads
+    hikari:
+      pool-name: BrokerAuthHikariCP
+      maximum-pool-size: 50
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      validation-timeout: 5000
+      leak-detection-threshold: 60000
+      connection-test-query: SELECT 1
+
+  # Redis Configuration with Vault Integration
+  data:
+    redis:
+      # Redis password will be retrieved from Vault if available
+      password: ${vault.secret.redis-password:}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      timeout: 2000ms
+      
+      # Connection Pool Configuration
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 2000ms
+          time-between-eviction-runs: 30s
+
+# Broker Integration Configuration
+broker:
+  # All broker credentials will be retrieved from Vault
+  zerodha:
+    api-url: ${ZERODHA_API_URL:https://api.kite.trade}
+    api-key: ${vault.secret.zerodha-api-key:}
+    api-secret: ${vault.secret.zerodha-api-secret:}
+    redirect-url: ${ZERODHA_REDIRECT_URL:http://localhost:8080/callback/zerodha}
+    timeout: 30s
+    
+  upstox:
+    api-url: ${UPSTOX_API_URL:https://api.upstox.com}
+    api-key: ${vault.secret.upstox-api-key:}
+    api-secret: ${vault.secret.upstox-api-secret:}
+    redirect-url: ${UPSTOX_REDIRECT_URL:http://localhost:8080/callback/upstox}
+    timeout: 30s
+    
+  angel-one:
+    api-url: ${ANGEL_ONE_API_URL:https://apiconnect.angelbroking.com}
+    api-key: ${vault.secret.angel-one-api-key:}
+    api-secret: ${vault.secret.angel-one-api-secret:}
+    redirect-url: ${ANGEL_ONE_REDIRECT_URL:http://localhost:8080/callback/angel-one}
+    timeout: 30s
+    
+  icici-direct:
+    api-url: ${ICICI_DIRECT_API_URL:https://api.icicidirect.com}
+    api-key: ${vault.secret.icici-direct-api-key:}
+    api-secret: ${vault.secret.icici-direct-api-secret:}
+    redirect-url: ${ICICI_DIRECT_REDIRECT_URL:http://localhost:8080/callback/icici-direct}
+    timeout: 30s
+
+# Monitoring and Observability
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,vault
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    vault:
+      enabled: true
+      sensitive: true
+      cache:
+        time-to-live: 10s
+  
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active:default}
+      vault-enabled: ${vault.enabled:false}
+    export:
+      prometheus:
+        enabled: true
+
+# Logging Configuration
+logging:
+  level:
+    org.springframework.vault: INFO
+    com.trademaster.brokerauth.service.VaultSecretService: DEBUG
+    com.trademaster.brokerauth.config.VaultSecurityEnforcementConfig: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n"
+
+# Custom Application Properties
+app:
+  name: TradeMaster Broker Auth Service
+  version: 1.0.0
+  description: Enterprise-grade broker authentication service with Vault integration
+  
+  # Feature Flags
+  features:
+    vault-integration: true
+    secret-rotation: true
+    audit-logging: true
+    performance-monitoring: true
+    security-enforcement: true

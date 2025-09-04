@@ -1,0 +1,46 @@
+apiVersion: 1
+
+providers:
+  # TradeMaster Broker Auth Service Dashboards
+  - name: 'trademaster-broker-auth'
+    orgId: 1
+    folder: 'TradeMaster'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/broker-auth
+
+  # System Dashboards
+  - name: 'system-monitoring'
+    orgId: 1
+    folder: 'System'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 60
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/system
+
+  # Application Dashboards
+  - name: 'application-monitoring'
+    orgId: 1
+    folder: 'Applications'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/applications
+
+  # Infrastructure Dashboards
+  - name: 'infrastructure-monitoring'
+    orgId: 1
+    folder: 'Infrastructure'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 60
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/infrastructure

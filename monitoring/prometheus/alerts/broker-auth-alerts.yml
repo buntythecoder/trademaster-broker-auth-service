@@ -1,0 +1,297 @@
+groups:
+  - name: trademaster-broker-auth-service
+    rules:
+      # High-Level Service Health Alerts
+      - alert: BrokerAuthServiceDown
+        expr: up{job="trademaster-broker-auth-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Broker Auth Service is down"
+          description: "The TradeMaster Broker Auth Service has been down for more than 1 minute"
+          runbook_url: "https://wiki.trademaster.com/runbooks/broker-auth-service-down"
+          dashboard_url: "https://grafana.trademaster.com/d/trademaster-broker-auth-overview"
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(broker_auth_failure_total[5m]) / 
+            (rate(broker_auth_success_total[5m]) + rate(broker_auth_failure_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "High authentication error rate"
+          description: "Authentication error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+          runbook_url: "https://wiki.trademaster.com/runbooks/high-auth-error-rate"
+
+      - alert: CriticalErrorRate
+        expr: |
+          (
+            rate(broker_auth_failure_total[5m]) / 
+            (rate(broker_auth_success_total[5m]) + rate(broker_auth_failure_total[5m]))
+          ) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Critical authentication error rate"
+          description: "Authentication error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+          runbook_url: "https://wiki.trademaster.com/runbooks/critical-auth-error-rate"
+
+      # Performance Alerts
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_server_requests_seconds_bucket{
+              application="trademaster-broker-auth-service"
+            }[5m])
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "High response time"
+          description: "95th percentile response time is {{ $value }}s over the last 5 minutes"
+          runbook_url: "https://wiki.trademaster.com/runbooks/high-response-time"
+
+      - alert: ExtremelyHighResponseTime
+        expr: |
+          histogram_quantile(0.95, 
+            rate(http_server_requests_seconds_bucket{
+              application="trademaster-broker-auth-service"
+            }[5m])
+          ) > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Extremely high response time"
+          description: "95th percentile response time is {{ $value }}s over the last 2 minutes"
+          runbook_url: "https://wiki.trademaster.com/runbooks/extreme-response-time"
+
+      # Security Alerts
+      - alert: SecurityViolationSpike
+        expr: rate(security_violation_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: security
+        annotations:
+          summary: "Security violation spike detected"
+          description: "Security violations are occurring at {{ $value }} per second"
+          runbook_url: "https://wiki.trademaster.com/runbooks/security-violations"
+
+      - alert: RateLimitExceeded
+        expr: rate(rate_limit_exceeded_total[5m]) > 10
+        for: 3m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "High rate limit violations"
+          description: "Rate limit exceeded {{ $value }} times per second over the last 5 minutes"
+          runbook_url: "https://wiki.trademaster.com/runbooks/rate-limits"
+
+      - alert: InvalidTokenSpike
+        expr: rate(invalid_token_total[5m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: security
+        annotations:
+          summary: "High invalid token attempts"
+          description: "Invalid token attempts are at {{ $value }} per second"
+          runbook_url: "https://wiki.trademaster.com/runbooks/invalid-tokens"
+
+      # Resource Alerts
+      - alert: HighMemoryUsage
+        expr: |
+          jvm_memory_used_bytes{application="trademaster-broker-auth-service", area="heap"} / 
+          jvm_memory_max_bytes{application="trademaster-broker-auth-service", area="heap"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "High JVM heap memory usage"
+          description: "JVM heap memory usage is {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.trademaster.com/runbooks/memory-usage"
+
+      - alert: CriticalMemoryUsage
+        expr: |
+          jvm_memory_used_bytes{application="trademaster-broker-auth-service", area="heap"} / 
+          jvm_memory_max_bytes{application="trademaster-broker-auth-service", area="heap"} > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Critical JVM heap memory usage"
+          description: "JVM heap memory usage is {{ $value | humanizePercentage }}"
+          runbook_url: "https://wiki.trademaster.com/runbooks/critical-memory"
+
+      # Database Alerts
+      - alert: DatabaseConnectionIssues
+        expr: rate(database_health_check_total{status="failure"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Database connection issues"
+          description: "Database health checks are failing"
+          runbook_url: "https://wiki.trademaster.com/runbooks/database-issues"
+
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95, 
+            rate(database_operation_duration_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Slow database queries"
+          description: "95th percentile database query time is {{ $value }}s"
+          runbook_url: "https://wiki.trademaster.com/runbooks/slow-queries"
+
+      # Cache/Redis Alerts
+      - alert: RedisConnectionIssues
+        expr: rate(redis_health_check_total{status="failure"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Redis connection issues"
+          description: "Redis health checks are failing"
+          runbook_url: "https://wiki.trademaster.com/runbooks/redis-issues"
+
+      # Broker Integration Alerts
+      - alert: BrokerConnectivityIssues
+        expr: rate(broker_connectivity_check_total{status="failure"}[5m]) > 0
+        for: 3m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: integrations
+        annotations:
+          summary: "Broker connectivity issues"
+          description: "Broker {{ $labels.broker_type }} connectivity checks are failing"
+          runbook_url: "https://wiki.trademaster.com/runbooks/broker-connectivity"
+
+      - alert: HighBrokerAPILatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(broker_api_call_duration_seconds_bucket[5m])
+          ) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: integrations
+        annotations:
+          summary: "High broker API latency"
+          description: "95th percentile broker API call latency is {{ $value }}s"
+          runbook_url: "https://wiki.trademaster.com/runbooks/broker-latency"
+
+      # Business Logic Alerts
+      - alert: SessionExpirySpike
+        expr: rate(broker_session_expired_total[5m]) > rate(broker_session_created_total[5m]) * 1.5
+        for: 10m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "High session expiry rate"
+          description: "Sessions are expiring faster than they are being created"
+          runbook_url: "https://wiki.trademaster.com/runbooks/session-expiry"
+
+      - alert: TokenRefreshFailures
+        expr: rate(broker_token_refresh_total{status="failure"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: integrations
+        annotations:
+          summary: "Token refresh failures"
+          description: "Token refresh failures are occurring at {{ $value }} per second"
+          runbook_url: "https://wiki.trademaster.com/runbooks/token-refresh"
+
+      # Virtual Threads Performance
+      - alert: VirtualThreadPerformanceIssues
+        expr: |
+          histogram_quantile(0.95, 
+            rate(virtual_thread_execution_duration_seconds_bucket[5m])
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "Virtual thread performance degradation"
+          description: "95th percentile virtual thread execution time is {{ $value }}s"
+          runbook_url: "https://wiki.trademaster.com/runbooks/virtual-threads"
+
+      # Encryption Performance
+      - alert: SlowEncryptionOperations
+        expr: |
+          histogram_quantile(0.95, 
+            rate(encryption_operation_duration_seconds_bucket[5m])
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          service: broker-auth
+          team: security
+        annotations:
+          summary: "Slow encryption operations"
+          description: "95th percentile encryption operation time is {{ $value }}s"
+          runbook_url: "https://wiki.trademaster.com/runbooks/encryption-performance"
+
+      # SLA Alerts
+      - alert: SLAViolation99Percentile
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{
+              application="trademaster-broker-auth-service",
+              status=~"2.."
+            }[5m])) / 
+            sum(rate(http_server_requests_seconds_count{
+              application="trademaster-broker-auth-service"
+            }[5m]))
+          ) < 0.99
+        for: 10m
+        labels:
+          severity: critical
+          service: broker-auth
+          team: platform
+        annotations:
+          summary: "SLA violation - 99% availability"
+          description: "Service availability is {{ $value | humanizePercentage }} over the last 10 minutes"
+          runbook_url: "https://wiki.trademaster.com/runbooks/sla-violation"

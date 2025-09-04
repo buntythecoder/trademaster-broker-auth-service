@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # HashiCorp Vault for secrets management
+  vault:
+    image: hashicorp/vault:1.15.2
+    container_name: broker-auth-vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "dev-root-token-trademaster"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_ADDR: "http://0.0.0.0:8200"
+      VAULT_API_ADDR: "http://0.0.0.0:8200"
+      VAULT_UI: "true"
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault-data:/vault/data
+      - vault-logs:/vault/logs
+      - ./vault-config:/vault/config:ro
+    command: |
+      sh -c '
+        echo "🔒 Starting HashiCorp Vault for TradeMaster..."
+        vault server -dev -dev-root-token-id="dev-root-token-trademaster" -dev-listen-address="0.0.0.0:8200"
+      '
+    networks:
+      - vault-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8200/v1/sys/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Vault UI (separate container for better isolation)
+  vault-ui:
+    image: djenriquez/vault-ui:2.4.0
+    container_name: broker-auth-vault-ui
+    ports:
+      - "8000:8000"
+    environment:
+      VAULT_URL_DEFAULT: http://vault:8200
+      VAULT_AUTH_DEFAULT: TOKEN
+    depends_on:
+      - vault
+    networks:
+      - vault-network
+    restart: unless-stopped
+
+  # Postgres with Vault integration (for comparison)
+  postgres:
+    image: postgres:16-alpine
+    container_name: broker-auth-postgres-vault
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    environment:
+      POSTGRES_DB: trademaster_broker_auth
+      POSTGRES_USER: trademaster_user
+      POSTGRES_PASSWORD: vault_managed_password_123  # Will be replaced by Vault
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - vault-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trademaster_user -d trademaster_broker_auth"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis with Vault integration
+  redis:
+    image: redis:7-alpine
+    container_name: broker-auth-redis-vault
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    command: >
+      sh -c '
+        echo "🔴 Starting Redis for TradeMaster Vault environment..."
+        redis-server --requirepass vault_managed_redis_password_123 --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+      '
+    volumes:
+      - redis-data:/data
+    networks:
+      - vault-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Vault Agent for secret rotation (optional)
+  vault-agent:
+    image: hashicorp/vault:1.15.2
+    container_name: broker-auth-vault-agent
+    volumes:
+      - ./vault-agent-config:/vault/config:ro
+      - vault-agent-data:/vault/data
+    environment:
+      VAULT_ADDR: http://vault:8200
+    command: |
+      sh -c '
+        echo "🤖 Starting Vault Agent for secret rotation..."
+        vault agent -config=/vault/config/agent.hcl
+      '
+    depends_on:
+      - vault
+    networks:
+      - vault-network
+    restart: unless-stopped
+
+  # Vault Secrets Operator (for Kubernetes-like secret injection)
+  vault-secrets-operator:
+    image: hashicorp/vault-k8s:1.3.1
+    container_name: broker-auth-vault-secrets-operator
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root-token-trademaster
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./vault-operator-config:/config:ro
+    depends_on:
+      - vault
+    networks:
+      - vault-network
+    restart: unless-stopped
+
+networks:
+  vault-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+volumes:
+  vault-data:
+    driver: local
+  vault-logs:
+    driver: local
+  vault-agent-data:
+    driver: local
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local

@@ -1,0 +1,388 @@
+server:
+  port: 8087
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: broker-auth-service
+  
+  # Config refresh capabilities
+  cloud:
+    refresh:
+      enabled: true
+      rate: 30s
+  
+  # MANDATORY: Virtual Threads Configuration per TradeMaster Standards
+  threads:
+    virtual:
+      enabled: true
+  
+  # Database Configuration
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/trademaster_broker_auth}
+    username: ${DATABASE_USERNAME:}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50  # Optimized for Virtual Threads
+      minimum-idle: 10       # Standards compliant
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+  
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+        jdbc:
+          batch_versioned_data: true
+        connection:
+          handling_mode: delayed_acquisition_and_release_after_transaction  # Virtual Threads optimization
+  
+  # Flyway Configuration
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+  
+  # Redis Configuration
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+  
+  # Cache Configuration
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000  # 5 minutes for session cache
+  
+  # Security Configuration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/api/v1/auth
+  
+  # Kafka Configuration
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      batch-size: 16384
+      linger-ms: 5
+      buffer-memory: 33554432
+    consumer:
+      group-id: broker-auth-service
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      max-poll-records: 500
+      fetch-min-size: 1
+      properties:
+        spring.json.trusted.packages: "com.trademaster.brokerauth.events"
+
+# OpenAPI Documentation
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    display-request-duration: true
+    show-extensions: true
+    show-common-extensions: true
+    default-models-expand-depth: 3
+    default-model-expand-depth: 3
+  packages-to-scan: com.trademaster.brokerauth.controller
+  show-actuator: false
+
+# Broker Configuration
+broker:
+  # Supported Brokers Configuration
+  zerodha:
+    name: "Zerodha Kite"
+    api-url: "https://api.kite.trade"
+    login-url: "https://kite.zerodha.com/connect/login"
+    app-id: ${ZERODHA_APP_ID:}
+    api-secret: ${ZERODHA_API_SECRET:}
+    request-token-url: "https://kite.zerodha.com/connect/login"
+    access-token-url: "https://api.kite.trade/session/token"
+    rate-limits:
+      per-second: 10
+      per-minute: 3000
+      per-day: 200000
+    session-validity: 86400  # 24 hours in seconds
+    
+  upstox:
+    name: "Upstox Pro"
+    api-url: "https://api.upstox.com/v2"
+    login-url: "https://api.upstox.com/v2/login/authorization/dialog"
+    client-id: ${UPSTOX_CLIENT_ID:}
+    client-secret: ${UPSTOX_CLIENT_SECRET:}
+    redirect-uri: ${UPSTOX_REDIRECT_URI:http://localhost:8087/api/v1/auth/upstox/callback}
+    rate-limits:
+      per-second: 25
+      per-minute: 250
+      per-day: 25000
+    session-validity: 86400  # 24 hours in seconds
+    
+  angel-one:
+    name: "Angel One SmartAPI"
+    api-url: "https://apiconnect.angelbroking.com"
+    client-code: ${ANGEL_CLIENT_CODE:}
+    password: ${ANGEL_PASSWORD:}
+    api-key: ${ANGEL_API_KEY:}
+    totp-secret: ${ANGEL_TOTP_SECRET:}
+    rate-limits:
+      per-second: 25
+      per-minute: 200
+      per-day: 100000
+    session-validity: 43200  # 12 hours in seconds
+    
+  icici:
+    name: "ICICI Direct Breeze"
+    api-url: "https://api.icicidirect.com/breezeapi"
+    login-url: "https://api.icicidirect.com/apiuser/login"
+    app-key: ${ICICI_APP_KEY:}
+    secret-key: ${ICICI_SECRET_KEY:}
+    redirect-uri: ${ICICI_REDIRECT_URI:http://localhost:8087/api/v1/auth/icici/callback}
+    rate-limits:
+      per-second: 2      # Conservative limit based on 100/minute
+      per-minute: 100    # Official limit per documentation
+      per-day: 5000      # Official limit per documentation
+    session-validity: 86400  # 24 hours in seconds (session token expiry)
+    checksum-timeout: 300    # 5 minutes for checksum validation
+
+  # Common Configuration
+  encryption:
+    algorithm: "AES/GCM/NoPadding"
+    key-size: 256
+    master-key: ${BROKER_ENCRYPTION_KEY:}
+    
+  session:
+    cleanup-interval: 3600  # 1 hour in seconds
+    max-concurrent-sessions: 5
+    token-refresh-threshold: 300  # 5 minutes before expiry
+
+# Rate Limiting Configuration
+rate-limiting:
+  broker-api:
+    capacity: 100
+    tokens: 20
+    refill-period: 60
+  
+  auth-endpoints:
+    capacity: 20
+    tokens: 5
+    refill-period: 60
+
+# MANDATORY: Enhanced Monitoring Configuration per TradeMaster Standards
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,threaddump,heapdump,configprops,refresh,beans
+      base-path: /actuator
+      cors:
+        allowed-origins: "*"
+        allowed-methods: GET,POST
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+    refresh:
+      enabled: true
+    configprops:
+      enabled: true
+      show-values: always
+  health:
+    config:
+      enabled: true
+    refresh:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 30s
+        descriptions: true
+    distribution:
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+        broker.auth.duration: 0.5, 0.95, 0.99
+        broker.api.calls.duration: 0.5, 0.95, 0.99
+        session.management.duration: 0.5, 0.95, 0.99
+        config.refresh.duration: 0.5, 0.95, 0.99
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms
+        broker.auth.duration: 100ms,500ms,1s,3s
+        broker.api.calls.duration: 100ms,500ms,1s,5s
+        config.refresh.duration: 100ms,500ms,1s,2s
+      percentiles-histogram:
+        http.server.requests: true
+        broker.auth.duration: true
+    tags:
+      application: trademaster
+      service: broker-auth-service
+      environment: ${spring.profiles.active:local}
+      config-server: ${CONFIG_SERVER_URL:localhost:8888}
+      version: ${info.app.version:1.0.0}
+  tracing:
+    sampling:
+      probability: 1.0
+    zipkin:
+      endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+
+# TradeMaster specific configuration
+trademaster:
+  security:
+    encryption:
+      key: ${ENCRYPTION_KEY:default-key-change-in-production-this-should-be-32-bytes}
+    cors:
+      allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+
+# Application Configuration
+app:
+  version: "1.0.0"
+  
+  # Kafka Topics Configuration
+  kafka:
+    topics:
+      broker-auth-events: broker-auth-events
+      session-events: session-events
+      rate-limit-events: rate-limit-events
+      
+  # Scheduler Configuration
+  scheduler:
+    session-cleanup:
+      enabled: true
+    token-refresh:
+      enabled: true
+    rate-limit-cleanup:
+      enabled: true
+      
+  # Circuit Breaker Configuration
+  circuit-breaker:
+    failure-rate-threshold: 50
+    slow-call-rate-threshold: 50
+    slow-call-duration-threshold: 2000
+    minimum-number-of-calls: 10
+    sliding-window-size: 20
+    wait-duration-in-open-state: 30000
+    
+  # Security Configuration
+  security:
+    cors:
+      allowed-origins: 
+        - "http://localhost:3000"
+        - "http://localhost:8080"
+        - "https://trademaster.app"
+      allowed-methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      allowed-headers:
+        - "*"
+      allow-credentials: true
+      max-age: 3600
+
+# Logging Configuration
+logging:
+  level:
+    com.trademaster.brokerauth: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    io.github.resilience4j: INFO
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# Resilience4j Configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      zerodha-api:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2000ms
+        minimum-number-of-calls: 10
+        sliding-window-size: 20
+        wait-duration-in-open-state: 30s
+      upstox-api:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2000ms
+        minimum-number-of-calls: 10
+        sliding-window-size: 20
+        wait-duration-in-open-state: 30s
+      angel-one-api:
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 3000ms
+        minimum-number-of-calls: 10
+        sliding-window-size: 20
+        wait-duration-in-open-state: 45s
+      icici-api:
+        failure-rate-threshold: 60
+        slow-call-rate-threshold: 60
+        slow-call-duration-threshold: 2500ms
+        minimum-number-of-calls: 8
+        sliding-window-size: 15
+        wait-duration-in-open-state: 30s
+  
+  ratelimiter:
+    instances:
+      zerodha-api:
+        limit-for-period: 10
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+      upstox-api:
+        limit-for-period: 25
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+      angel-one-api:
+        limit-for-period: 20
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+      icici-api:
+        limit-for-period: 2
+        limit-refresh-period: 1s
+        timeout-duration: 3s
+        
+  retry:
+    instances:
+      broker-auth:
+        max-attempts: 3
+        wait-duration: 1s
+        exponential-backoff-multiplier: 2
