@@ -57,4 +57,7 @@ public class BrokerSession {
     
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+    
+    @Column(name = "metadata", columnDefinition = "text")
+    private String metadata;
 }

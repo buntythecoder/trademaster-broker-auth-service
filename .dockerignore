@@ -2,6 +2,7 @@
 
 # Build artifacts
 build/
+!build/libs/*.jar
 target/
 .gradle/
 gradle-app.setting

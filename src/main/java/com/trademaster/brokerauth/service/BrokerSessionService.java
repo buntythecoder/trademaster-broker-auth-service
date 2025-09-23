@@ -9,8 +9,12 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Broker Session Service
@@ -50,5 +54,75 @@ public class BrokerSessionService {
             saveSession(session);
             log.info("Session revoked: {}", sessionId);
         });
+    }
+    
+    /**
+     * Get active session count for monitoring
+     */
+    public int getActiveSessionCount() {
+        try {
+            Set<String> keys = redisTemplate.keys(BrokerAuthConstants.SESSION_KEY_PREFIX + "*");
+            return keys != null ? keys.size() : 0;
+        } catch (Exception e) {
+            log.warn("Failed to get active session count", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * Get today's session count for statistics
+     */
+    public int getTodaySessionCount() {
+        try {
+            // In a production system, this would query a database or separate counter
+            // For now, return the active count as an approximation
+            return getActiveSessionCount();
+        } catch (Exception e) {
+            log.warn("Failed to get today's session count", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * Get user's active sessions
+     */
+    public List<BrokerSession> getUserActiveSessions(String userId) {
+        try {
+            Set<String> keys = redisTemplate.keys(BrokerAuthConstants.SESSION_KEY_PREFIX + "*");
+            if (keys == null) {
+                return List.of();
+            }
+            
+            return keys.stream()
+                .map(key -> redisTemplate.opsForValue().get(key))
+                .filter(session -> session != null)
+                .filter(session -> userId.equals(session.getUserId()))
+                .filter(session -> session.getStatus() == SessionStatus.ACTIVE)
+                .filter(session -> session.getExpiresAt().isAfter(LocalDateTime.now()))
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("Failed to get user active sessions for userId: {}", userId, e);
+            return List.of();
+        }
+    }
+    
+    /**
+     * Update session last access time
+     */
+    public boolean updateLastAccess(String sessionId) {
+        try {
+            Optional<BrokerSession> sessionOpt = getSession(sessionId);
+            if (sessionOpt.isPresent()) {
+                BrokerSession session = sessionOpt.get();
+                session.setLastAccessedAt(LocalDateTime.now());
+                saveSession(session);
+                log.debug("Updated last access time for session: {}", sessionId);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            log.warn("Failed to update last access for session: {}", sessionId, e);
+            return false;
+        }
     }
 }

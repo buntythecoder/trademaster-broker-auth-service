@@ -248,16 +248,63 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle resource not found exceptions (actuator endpoints)
+     */
+    @ExceptionHandler(org.springframework.web.servlet.NoHandlerFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoHandlerFoundException(
+            org.springframework.web.servlet.NoHandlerFoundException ex, WebRequest request) {
+
+        String correlationId = UUID.randomUUID().toString();
+        String requestedPath = ex.getRequestURL();
+
+        log.error("No handler found - CorrelationId: {}, Path: {}, Method: {}",
+            correlationId, requestedPath, ex.getHttpMethod());
+
+        // Special handling for actuator endpoints
+        if (requestedPath.startsWith("/actuator/")) {
+            return createErrorResponse(
+                correlationId,
+                "ACTUATOR_ENDPOINT_ERROR",
+                "Actuator endpoint not found. Please check management configuration.",
+                HttpStatus.NOT_FOUND,
+                request.getDescription(false)
+            );
+        }
+
+        return createErrorResponse(
+            correlationId,
+            "ENDPOINT_NOT_FOUND",
+            "The requested endpoint was not found: " + requestedPath,
+            HttpStatus.NOT_FOUND,
+            request.getDescription(false)
+        );
+    }
+
+    /**
      * Handle all other exceptions
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
             Exception ex, WebRequest request) {
-        
+
         String correlationId = UUID.randomUUID().toString();
-        
+
+        // Special handling for static resource errors (now handled by ActuatorRedirectController)
+        if (ex.getMessage() != null && ex.getMessage().contains("No static resource")) {
+            log.debug("Static resource request handled by controller - CorrelationId: {}, Request: {}",
+                correlationId, request.getDescription(false));
+
+            return createErrorResponse(
+                correlationId,
+                "STATIC_RESOURCE_ERROR",
+                "Resource not found. If accessing actuator endpoints, please use /api/v2/health instead.",
+                HttpStatus.NOT_FOUND,
+                request.getDescription(false)
+            );
+        }
+
         log.error("Unexpected error - CorrelationId: {}, Error: {}", correlationId, ex.getMessage(), ex);
-        
+
         return createErrorResponse(
             correlationId,
             "UNEXPECTED_ERROR",

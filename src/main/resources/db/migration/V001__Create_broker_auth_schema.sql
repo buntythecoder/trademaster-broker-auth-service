@@ -188,31 +188,10 @@ CREATE TRIGGER update_broker_sessions_updated_at BEFORE UPDATE ON broker_session
 CREATE TRIGGER update_rate_limit_tracking_updated_at BEFORE UPDATE ON rate_limit_tracking
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Create database user for the application (if not exists)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_user WHERE usename = 'trademaster_broker_auth') THEN
-        CREATE USER trademaster_broker_auth WITH PASSWORD 'secure_password_change_in_production';
-    END IF;
-END $$;
+-- Note: Database user and permissions are handled by init-multiple-databases.sh script
+-- The broker_auth_user is created during database initialization
 
--- Grant appropriate permissions
-GRANT CONNECT ON DATABASE trademaster_broker_auth TO trademaster_broker_auth;
-GRANT USAGE ON SCHEMA public TO trademaster_broker_auth;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO trademaster_broker_auth;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO trademaster_broker_auth;
-
--- Grant permissions for future tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO trademaster_broker_auth;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO trademaster_broker_auth;
-
--- Create indexes for better performance on frequently queried columns
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_broker_sessions_composite 
-    ON broker_sessions(user_id, broker_type, status, expires_at);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_performance 
-    ON broker_auth_audit(user_id, timestamp DESC) 
-    WHERE status IN ('SUCCESS', 'FAILURE');
+-- Note: Performance indexes are created in separate migration V003 due to CONCURRENTLY requirement
 
 -- Comments for documentation
 COMMENT ON TABLE brokers IS 'Configuration for supported trading brokers';

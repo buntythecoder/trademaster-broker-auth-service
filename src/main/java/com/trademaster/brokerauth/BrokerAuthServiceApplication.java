@@ -8,17 +8,20 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 /**
  * TradeMaster Broker Authentication Service
- * 
+ *
  * Main application class for secure multi-broker authentication.
  * Handles Zerodha, Upstox, Angel One, and ICICI Direct authentication.
- * 
+ *
  * MANDATORY: Java 24 + Virtual Threads - Rule #1
- * MANDATORY: Zero TODOs/Placeholders - Rule #7  
- * 
+ * MANDATORY: Zero TODOs/Placeholders - Rule #7
+ *
  * @author TradeMaster Development Team
  * @version 1.0.0
  */
-@SpringBootApplication
+@SpringBootApplication(exclude = {
+    org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.class,
+    org.springframework.boot.autoconfigure.web.client.RestClientAutoConfiguration.class
+})
 @EnableAsync
 @EnableTransactionManagement
 @Slf4j

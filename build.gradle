@@ -44,9 +44,15 @@ repositories {
 }
 
 // Spring Cloud BOM for proper version management
+ext {
+    springCloudVersion = '2025.0.0'
+    testContainersVersion = '1.20.4'
+}
+
 dependencyManagement {
     imports {
-        mavenBom 'org.springframework.cloud:spring-cloud-dependencies:2023.0.0'
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+        mavenBom "org.testcontainers:testcontainers-bom:${testContainersVersion}"
     }
 }
 
@@ -55,17 +61,18 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    // implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server' // DISABLED - causes SCRAM auth interference
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-actuator'
     
-    // Spring Cloud Config Client for centralized configuration
-    implementation 'org.springframework.cloud:spring-cloud-starter-config'
+    // MANDATORY: Consul used for configuration management (per TradeMaster standards)
     
-    // Service Discovery for Config Server
-    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    // MANDATORY: Consul Service Discovery and Configuration per Golden Specification  
+    implementation 'org.springframework.cloud:spring-cloud-starter-consul-discovery'
+    implementation 'org.springframework.cloud:spring-cloud-starter-consul-config'
     
     // Distributed Tracing
     implementation 'io.micrometer:micrometer-tracing-bridge-brave'
@@ -74,7 +81,7 @@ dependencies {
     // Kafka for Event-Driven Architecture
     implementation 'org.springframework.kafka:spring-kafka'
     
-    // Database Support
+    // Database Support - Use Spring BOM managed version for SCRAM compatibility
     implementation 'org.postgresql:postgresql'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
@@ -100,11 +107,19 @@ dependencies {
     
     // HTTP Client for Broker API Calls - MANDATORY: No WebFlux per TradeMaster Rule #1
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'org.apache.httpcomponents.client5:httpclient5:5.3'
+    
+    // ✅ HTTP CLIENT CONNECTION POOLING (MANDATORY) - Apache HttpClient 5.x for connection pooling
+    implementation 'org.apache.httpcomponents.client5:httpclient5:5.4.1'
+    implementation 'org.apache.httpcomponents.core5:httpcore5:5.3.1'
     
     // Security and Encryption
     implementation 'org.springframework.security:spring-security-crypto'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
+    
+    // Lightweight JWT (like working services)
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    implementation 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    implementation 'io.jsonwebtoken:jjwt-jackson:0.12.6'
     
     // JSON Processing
     implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -116,9 +131,8 @@ dependencies {
     implementation 'io.opentelemetry:opentelemetry-sdk'
     implementation 'io.opentelemetry:opentelemetry-extension-trace-propagators'
     
-    // HashiCorp Vault Integration for Secrets Management
-    implementation 'org.springframework.vault:spring-vault-core:3.1.0'
-    implementation 'org.springframework.cloud:spring-cloud-vault-config:4.1.0'
+    // HashiCorp Vault Integration for Secrets Management - Using Spring Cloud BOM managed versions
+    implementation 'org.springframework.cloud:spring-cloud-starter-vault-config'
     
     // Lombok for Code Generation
     compileOnly 'org.projectlombok:lombok'
@@ -154,8 +168,8 @@ tasks.withType(JavaExec) {
 // Flyway Configuration
 flyway {
     url = 'jdbc:postgresql://localhost:5432/trademaster_broker_auth'
-    user = 'trademaster_user'
-    password = 'trademaster_password'
+    user = 'broker_auth_user'
+    password = 'broker_auth_pass'
     locations = ['classpath:db/migration']
     baselineOnMigrate = true
     validateOnMigrate = true

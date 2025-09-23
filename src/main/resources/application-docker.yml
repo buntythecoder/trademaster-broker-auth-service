@@ -8,6 +8,20 @@ server:
 spring:
   application:
     name: broker-auth-service
+  
+  # Vault Integration for Broker Secrets
+  cloud:
+    vault:
+      enabled: ${VAULT_ENABLED:false}
+      uri: ${VAULT_URI:http://vault:8200}
+      authentication: TOKEN
+      token: ${VAULT_TOKEN:}
+      kv:
+        enabled: true
+        backend: secret
+        profile-separator: '/'
+        default-context: broker-auth
+        application-name: broker-auth-service
     
   # Database Configuration
   datasource:

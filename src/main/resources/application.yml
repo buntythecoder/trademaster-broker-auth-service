@@ -1,14 +1,68 @@
 server:
-  port: 8087
-  servlet:
-    context-path: /api/v1
+  port: 8084
 
 spring:
   application:
     name: broker-auth-service
-  
-  # Config refresh capabilities
+
+  # MANDATORY: Consul Config Import (per TradeMaster standards)
+  config:
+    import: "optional:consul:"
+
+  # Ensure actuator endpoints are handled correctly - disable on main port
+  mvc:
+    throw-exception-if-no-handler-found: true
+  # Disable actuator auto-configuration on main server
+  boot:
+    admin:
+      client:
+        enabled: false
+      
+  # MANDATORY: Consul Service Discovery & Configuration per Golden Specification
   cloud:
+    # Consul Integration
+    consul:
+      host: ${CONSUL_HOST:localhost}
+      port: ${CONSUL_PORT:8500}
+      discovery:
+        enabled: true
+        register: true
+        health-check-path: /actuator/health
+        health-check-interval: 30s
+        health-check-timeout: 10s
+        health-check-critical-timeout: 300s
+        health-check-url: http://${CONSUL_INSTANCE_HOSTNAME:localhost}:${MANAGEMENT_SERVER_PORT:9084}/actuator/health
+        instance-id: ${spring.application.name}:${server.port}:${random.uuid}
+        hostname: ${CONSUL_INSTANCE_HOSTNAME:localhost}
+        port: ${server.port}
+        service-name: ${spring.application.name}
+        tags:
+          - broker-capabilities=ZERODHA,UPSTOX,ANGEL_ONE,ICICI_DIRECT
+          - api-version=v1
+          - kong-upstream=broker-auth-service
+          - internal-api=/api/internal/v1/broker-auth
+          - external-api=/api/v1/broker-auth
+        metadata:
+          version: ${app.version:1.0.0}
+          description: "TradeMaster Broker Authentication Service"
+          supported-brokers: "ZERODHA,UPSTOX,ANGEL_ONE,ICICI_DIRECT"
+          performance-target: "session-validation-25ms"
+      config:
+        enabled: true
+        prefix: config
+        default-context: ${spring.application.name}
+        profile-separator: ':'
+        data-key: data
+        format: YAML
+        watch:
+          enabled: true
+          delay: 10000
+    
+    # Cloud Config (managed by Consul)
+    config:
+      enabled: true
+    
+    # Config refresh capabilities
     refresh:
       enabled: true
       rate: 30s
@@ -21,8 +75,8 @@ spring:
   # Database Configuration
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/trademaster_broker_auth}
-    username: ${DATABASE_USERNAME:}
-    password: ${DATABASE_PASSWORD:}
+    username: ${DATABASE_USERNAME:trademaster_admin}
+    password: ${DATABASE_PASSWORD:trademaster_secure_pass}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 50  # Optimized for Virtual Threads
@@ -31,8 +85,21 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
       leak-detection-threshold: 60000
+      # ✅ PostgreSQL-specific connection properties from working services
+      data-source-properties:
+        ApplicationName: TradeMaster-Broker-Auth-Service
+        prepareThreshold: 3
+        preparedStatementCacheQueries: 256
+        preparedStatementCacheSizeMiB: 8
+        socketTimeout: 10
+        connectTimeout: 5
+        tcpKeepAlive: true
+        defaultRowFetchSize: 100
+        autosave: conservative
+        binaryTransfer: true
+        logUnclosedConnections: true
   
-  # JPA Configuration
+  # JPA Configuration  
   jpa:
     hibernate:
       ddl-auto: validate
@@ -43,18 +110,23 @@ spring:
         format_sql: true
         jdbc:
           batch_size: 25
+          batch_versioned_data: true
         order_inserts: true
         order_updates: true
-        jdbc:
-          batch_versioned_data: true
         connection:
           handling_mode: delayed_acquisition_and_release_after_transaction  # Virtual Threads optimization
   
   # Flyway Configuration
   flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/trademaster_broker_auth}
+    user: ${DATABASE_USERNAME:trademaster_admin}
+    password: ${DATABASE_PASSWORD:trademaster_secure_pass}
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
+    schemas: public
+    default-schema: public
   
   # Redis Configuration
   data:
@@ -76,10 +148,10 @@ spring:
   
   # Security Configuration
   security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: http://localhost:8081/api/v1/auth
+    # oauth2:
+    #   resourceserver:
+    #     jwt:
+    #       issuer-uri: http://localhost:8081/api/v1/auth
   
   # Kafka Configuration
   kafka:
@@ -141,7 +213,7 @@ broker:
     login-url: "https://api.upstox.com/v2/login/authorization/dialog"
     client-id: ${UPSTOX_CLIENT_ID:}
     client-secret: ${UPSTOX_CLIENT_SECRET:}
-    redirect-uri: ${UPSTOX_REDIRECT_URI:http://localhost:8087/api/v1/auth/upstox/callback}
+    redirect-uri: ${UPSTOX_REDIRECT_URI:http://localhost:8084/api/v1/auth/upstox/callback}
     rate-limits:
       per-second: 25
       per-minute: 250
@@ -167,7 +239,7 @@ broker:
     login-url: "https://api.icicidirect.com/apiuser/login"
     app-key: ${ICICI_APP_KEY:}
     secret-key: ${ICICI_SECRET_KEY:}
-    redirect-uri: ${ICICI_REDIRECT_URI:http://localhost:8087/api/v1/auth/icici/callback}
+    redirect-uri: ${ICICI_REDIRECT_URI:http://localhost:8084/api/v1/auth/icici/callback}
     rate-limits:
       per-second: 2      # Conservative limit based on 100/minute
       per-minute: 100    # Official limit per documentation
@@ -200,20 +272,33 @@ rate-limiting:
 
 # MANDATORY: Enhanced Monitoring Configuration per TradeMaster Standards
 management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9084}  # Separate port for management endpoints
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,env,threaddump,heapdump,configprops,refresh,beans
+        include: health,info,metrics,prometheus,env,threaddump,heapdump,configprops,refresh,beans,readiness,liveness
       base-path: /actuator
+      path-mapping:
+        health: health
+        info: info
+        readiness: ready
+        liveness: alive
       cors:
         allowed-origins: "*"
         allowed-methods: GET,POST
   endpoint:
     health:
+      enabled: true
       show-details: always
       show-components: always
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db,redis
+        liveness:
+          include: livenessState,diskSpace,ping
     metrics:
       enabled: true
     prometheus:
@@ -268,6 +353,56 @@ trademaster:
       key: ${ENCRYPTION_KEY:default-key-change-in-production-this-should-be-32-bytes}
     cors:
       allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+    
+    # Kong API Gateway Integration per Golden Specification
+    kong:
+      # Kong Consumer Headers for Internal API Authentication
+      headers:
+        consumer-id: X-Consumer-ID
+        consumer-username: X-Consumer-Username 
+        consumer-custom-id: X-Consumer-Custom-ID
+        api-key: X-API-Key
+      
+      # Service API Key Configuration
+      service-keys:
+        trading-service: ${TRADING_SERVICE_API_KEY:}
+        portfolio-service: ${PORTFOLIO_SERVICE_API_KEY:}
+        risk-service: ${RISK_SERVICE_API_KEY:}
+        notification-service: ${NOTIFICATION_SERVICE_API_KEY:}
+        monitoring-service: ${MONITORING_SERVICE_API_KEY:}
+        config-service: ${CONFIG_SERVICE_API_KEY:}
+      
+      # Kong Service Configuration for Registration
+      upstream:
+        name: broker-auth-service
+        url: http://localhost:${server.port}
+        health-check-url: /actuator/health
+        routes:
+          external:
+            path: /api/v1/broker-auth
+            methods: [GET, POST, PUT, DELETE]
+            strip-path: false
+          internal:
+            path: /api/internal/v1/broker-auth  
+            methods: [GET, POST, PUT, DELETE]
+            strip-path: false
+  
+  # HTTP Client Configuration
+  http:
+    connection-pool:
+      max-total: 75          # Auth service optimized - max total connections
+      max-per-route: 35      # Max connections per route for auth operations
+      validate-after-inactivity: 2000  # Connection validation interval (ms)
+    timeout:
+      connection: 5000       # Connection timeout for auth operations (ms)
+      socket: 10000          # Socket timeout for broker API calls (ms)
+      request: 8000          # Request timeout for internal calls (ms)
+    keep-alive:
+      duration: 30000        # Keep-alive duration (ms)
+  
+  # Service identification for internal communication
+  service:
+    name: broker-auth-service
 
 # Application Configuration
 app:
@@ -386,3 +521,76 @@ resilience4j:
         max-attempts: 3
         wait-duration: 1s
         exponential-backoff-multiplier: 2
+
+# ===== HTTP CLIENT CONFIGURATION =====
+# Connection pooling configuration for broker auth service merged with main trademaster section
+
+---
+# Docker Profile - Override database configuration for Docker environment
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    url: jdbc:postgresql://postgres:5432/trademaster_broker_auth
+    username: trademaster_admin
+    password: trademaster_secure_pass
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50  # Optimized for Virtual Threads
+      minimum-idle: 10       # Standards compliant
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      # ✅ PostgreSQL-specific connection properties from working services + debug
+      data-source-properties:
+        ApplicationName: TradeMaster-Broker-Auth-Service
+        prepareThreshold: 3
+        preparedStatementCacheQueries: 256
+        preparedStatementCacheSizeMiB: 8
+        socketTimeout: 10
+        connectTimeout: 5
+        tcpKeepAlive: true
+        defaultRowFetchSize: 100
+        autosave: conservative
+        binaryTransfer: true
+        logUnclosedConnections: true
+        loggerLevel: TRACE
+  # JPA Configuration for Docker - Use create pattern like trading-service
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 25
+          batch_versioned_data: true
+        order_inserts: true
+        order_updates: true
+        connection:
+          handling_mode: delayed_acquisition_and_release_after_transaction  # Virtual Threads optimization
+          
+  data:
+    redis:
+      host: redis
+      
+  # Enhanced logging for SCRAM debugging
+  logging:
+    level:
+      com.zaxxer.hikari: DEBUG
+      org.springframework.boot.autoconfigure.jdbc: DEBUG
+      org.springframework.jdbc.datasource: DEBUG
+      org.flywaydb: DEBUG
+      org.postgresql: DEBUG
+      org.hibernate.engine.jdbc.connections: DEBUG
+      org.springframework.boot.autoconfigure.flyway: DEBUG
+      
+  flyway:
+    enabled: false
+    url: jdbc:postgresql://postgres:5432/trademaster_broker_auth
+    user: trademaster_admin
+    password: trademaster_secure_pass

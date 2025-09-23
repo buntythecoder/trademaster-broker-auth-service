@@ -86,7 +86,8 @@ public class BrokerAuthenticationService {
             LocalDateTime.now(),
             authResponse.expiresAt(),
             LocalDateTime.now(),
-            LocalDateTime.now()
+            LocalDateTime.now(),
+            null  // metadata - can be populated later if needed
         );
     }
     

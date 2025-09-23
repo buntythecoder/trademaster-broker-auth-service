@@ -7,7 +7,13 @@ DROP TABLE IF EXISTS broker_accounts CASCADE;
 DROP TABLE IF EXISTS brokers CASCADE;
 DROP VIEW IF EXISTS active_sessions_summary CASCADE;
 
--- Drop functions
+-- Drop triggers first (to avoid dependency conflicts)
+DROP TRIGGER IF EXISTS update_brokers_updated_at ON brokers;
+DROP TRIGGER IF EXISTS update_broker_accounts_updated_at ON broker_accounts;
+DROP TRIGGER IF EXISTS update_broker_sessions_updated_at ON broker_sessions;
+DROP TRIGGER IF EXISTS update_rate_limit_tracking_updated_at ON rate_limit_tracking;
+
+-- Drop functions after triggers are removed
 DROP FUNCTION IF EXISTS check_max_sessions_limit(BIGINT, VARCHAR);
 DROP FUNCTION IF EXISTS get_account_health_score(BIGINT);
 DROP FUNCTION IF EXISTS cleanup_expired_sessions();

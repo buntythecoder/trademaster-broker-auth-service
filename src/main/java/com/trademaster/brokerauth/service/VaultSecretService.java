@@ -3,6 +3,7 @@ package com.trademaster.brokerauth.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.vault.core.VaultTemplate;
 import org.springframework.vault.support.VaultResponse;
@@ -21,6 +22,12 @@ import java.util.concurrent.Executors;
  * MANDATORY: Pattern matching for error handling - Rule #14
  */
 @Service
+@ConditionalOnProperty(
+    prefix = "spring.cloud.vault",
+    name = "enabled",
+    havingValue = "true",
+    matchIfMissing = false
+)
 @RequiredArgsConstructor
 @Slf4j
 public class VaultSecretService {
