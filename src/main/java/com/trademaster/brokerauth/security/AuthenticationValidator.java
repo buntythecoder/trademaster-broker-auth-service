@@ -67,10 +67,17 @@ public class AuthenticationValidator {
     }
     
     private AuthenticationStatus evaluateAuthenticationStatus(SecurityContext context) {
-        return !context.isAuthenticated() ? AuthenticationStatus.MISSING_USER_ID :
-               context.userId().length() < BrokerAuthConstants.MIN_USER_ID_LENGTH ? AuthenticationStatus.INVALID_USER_ID :
-               !context.hasValidSession() ? AuthenticationStatus.NO_SESSION :
-               AuthenticationStatus.VALID;
+        // Functional pattern matching with switch expression - Rule #14
+        return switch (true) {
+            case boolean b when !context.isAuthenticated() ->
+                AuthenticationStatus.MISSING_USER_ID;
+            case boolean b when context.userId().length() < BrokerAuthConstants.MIN_USER_ID_LENGTH ->
+                AuthenticationStatus.INVALID_USER_ID;
+            case boolean b when !context.hasValidSession() ->
+                AuthenticationStatus.NO_SESSION;
+            default ->
+                AuthenticationStatus.VALID;
+        };
     }
     
     private enum AuthenticationStatus {

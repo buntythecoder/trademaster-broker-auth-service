@@ -1,6 +1,8 @@
 package com.trademaster.brokerauth.config;
 
 import com.trademaster.brokerauth.security.ServiceApiKeyFilter;
+import com.trademaster.brokerauth.security.JwtAuthenticationEntryPoint;
+import com.trademaster.brokerauth.security.JwtRequestFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,8 +35,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity(prePostEnabled = true)
 @RequiredArgsConstructor
 public class SecurityConfig {
-    
+
     private final ServiceApiKeyFilter serviceApiKeyFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtRequestFilter jwtRequestFilter;
     
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -54,8 +58,11 @@ public class SecurityConfig {
                 
                 .anyRequest().denyAll()
             )
-            // Add ServiceApiKeyFilter before standard authentication filter
-            .addFilterBefore(serviceApiKeyFilter, UsernamePasswordAuthenticationFilter.class)
+            // JWT authentication entry point for external API failures
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+            // Add custom authentication filters in order
+            .addFilterBefore(serviceApiKeyFilter, UsernamePasswordAuthenticationFilter.class)  // Order 1: Kong API keys
+            .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)      // Order 2: JWT validation
             .build();
     }
 }

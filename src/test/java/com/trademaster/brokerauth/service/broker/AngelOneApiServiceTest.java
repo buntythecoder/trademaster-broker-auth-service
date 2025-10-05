@@ -94,17 +94,14 @@ class AngelOneApiServiceTest {
             .setResponseCode(200)
             .setBody(mockLoginResponse)
             .addHeader("Content-Type", "application/json"));
-        
-        AuthRequest request = new AuthRequest(
-            "TEST123",
-            null,
-            null,
-            null,
-            null,
-            null,
-            "127.0.0.1"
-        );
-        
+
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ANGEL_ONE)
+            .apiKey("TEST_API_KEY")
+            .apiSecret("TEST_API_SECRET")
+            .userId("TEST123")
+            .build();
+
         // When
         CompletableFuture<AuthResponse> future = angelOneApiService.authenticate(request);
         AuthResponse response = future.get(10, TimeUnit.SECONDS);
@@ -142,17 +139,15 @@ class AngelOneApiServiceTest {
             .setResponseCode(200)
             .setBody(mockTotpResponse)
             .addHeader("Content-Type", "application/json"));
-        
-        AuthRequest request = new AuthRequest(
-            "TEST123",
-            null,
-            null,
-            "123456", // TOTP code
-            null,
-            null,
-            "127.0.0.1"
-        );
-        
+
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ANGEL_ONE)
+            .apiKey("TEST_API_KEY")
+            .apiSecret("TEST_API_SECRET")
+            .userId("TEST123")
+            .totpCode("123456")
+            .build();
+
         // When
         CompletableFuture<AuthResponse> future = angelOneApiService.authenticate(request);
         AuthResponse response = future.get(10, TimeUnit.SECONDS);
@@ -222,15 +217,12 @@ class AngelOneApiServiceTest {
             .setBody(mockErrorResponse)
             .addHeader("Content-Type", "application/json"));
         
-        AuthRequest request = new AuthRequest(
-            "INVALID",
-            null,
-            null,
-            null,
-            null,
-            null,
-            "127.0.0.1"
-        );
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ANGEL_ONE)
+            .apiKey("TEST_API_KEY")
+            .apiSecret("TEST_API_SECRET")
+            .userId("INVALID")
+            .build();
         
         // When
         CompletableFuture<AuthResponse> future = angelOneApiService.authenticate(request);
@@ -249,16 +241,13 @@ class AngelOneApiServiceTest {
         // Given - Server returns connection error
         mockWebServer.enqueue(new MockResponse().setSocketPolicy(
             okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST));
-        
-        AuthRequest request = new AuthRequest(
-            "TEST123",
-            null,
-            null,
-            null,
-            null,
-            null,
-            "127.0.0.1"
-        );
+
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ANGEL_ONE)
+            .apiKey("TEST_API_KEY")
+            .apiSecret("TEST_API_SECRET")
+            .userId("TEST123")
+            .build();
         
         // When
         CompletableFuture<AuthResponse> future = angelOneApiService.authenticate(request);
@@ -274,21 +263,19 @@ class AngelOneApiServiceTest {
     void shouldHandleInvalidResponseFormat() throws Exception {
         // Given
         String invalidResponse = "{ invalid json }";
-        
+
         mockWebServer.enqueue(new MockResponse()
             .setResponseCode(200)
             .setBody(invalidResponse)
             .addHeader("Content-Type", "application/json"));
-        
-        AuthRequest request = new AuthRequest(
-            "TEST123",
-            null,
-            null,
-            "123456",
-            null,
-            null,
-            "127.0.0.1"
-        );
+
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ANGEL_ONE)
+            .apiKey("TEST_API_KEY")
+            .apiSecret("TEST_API_SECRET")
+            .userId("TEST123")
+            .totpCode("123456")
+            .build();
         
         // When
         CompletableFuture<AuthResponse> future = angelOneApiService.authenticate(request);
@@ -317,16 +304,14 @@ class AngelOneApiServiceTest {
                 }
                 """)
             .addHeader("Content-Type", "application/json"));
-        
-        AuthRequest request = new AuthRequest(
-            "TEST123",
-            null,
-            null,
-            "123456",
-            null,
-            null,
-            "127.0.0.1"
-        );
+
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ANGEL_ONE)
+            .apiKey("TEST_API_KEY")
+            .apiSecret("TEST_API_SECRET")
+            .userId("TEST123")
+            .totpCode("123456")
+            .build();
         
         // When
         angelOneApiService.authenticate(request).get(10, TimeUnit.SECONDS);

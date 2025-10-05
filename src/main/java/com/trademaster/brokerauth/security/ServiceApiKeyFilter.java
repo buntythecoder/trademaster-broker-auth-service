@@ -18,6 +18,10 @@ import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Service API Key Authentication Filter - Kong Dynamic Integration for Broker Auth Service
@@ -54,65 +58,101 @@ public class ServiceApiKeyFilter implements Filter {
     private boolean serviceAuthEnabled;
     
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) 
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
-        
+
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
-        
-        String requestPath = httpRequest.getRequestURI();
-        
-        // Only process internal API requests
-        if (!requestPath.startsWith(INTERNAL_API_PATH)) {
-            chain.doFilter(request, response);
-            return;
+
+        processRequest(httpRequest, httpResponse, chain);
+    }
+
+    /**
+     * Functional request processing pipeline - Rule #3 Functional Programming
+     */
+    private void processRequest(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+
+        RequestContext context = RequestContext.of(request, response, chain);
+
+        // Functional pipeline with pattern matching
+        AuthenticationResult result = Optional.of(context)
+            .filter(this::isInternalApiRequest)
+            .map(this::determineAuthenticationStrategy)
+            .orElse(AuthenticationStrategy.bypass())
+            .executeStrategy(context);
+
+        // Pattern matching for result handling
+        handleAuthenticationResult(result, context);
+    }
+
+    /**
+     * Predicate for internal API request filtering
+     */
+    private boolean isInternalApiRequest(RequestContext context) {
+        return context.requestPath().startsWith(INTERNAL_API_PATH);
+    }
+
+    /**
+     * Functional strategy determination using pattern matching
+     */
+    private AuthenticationStrategy determineAuthenticationStrategy(RequestContext context) {
+        return switch (true) {
+            case boolean b when !serviceAuthEnabled ->
+                AuthenticationStrategy.development();
+            case boolean b when hasKongConsumerHeaders(context) ->
+                AuthenticationStrategy.kongValidated();
+            case boolean b when hasValidApiKey(context) ->
+                AuthenticationStrategy.directApiKey();
+            default ->
+                AuthenticationStrategy.unauthorized("Missing service API key or Kong consumer headers");
+        };
+    }
+
+    /**
+     * Pattern matching for result handling
+     */
+    private void handleAuthenticationResult(AuthenticationResult result, RequestContext context)
+            throws IOException, ServletException {
+
+        switch (result.type()) {
+            case SUCCESS -> {
+                setServiceAuthentication(result.serviceId());
+                result.logMessage().ifPresent(msg -> log.info("ServiceApiKeyFilter: {}", msg));
+                context.chain().doFilter(context.request(), context.response());
+            }
+            case BYPASS -> {
+                context.chain().doFilter(context.request(), context.response());
+            }
+            case FAILURE -> {
+                log.error("ServiceApiKeyFilter: Authentication failed for request: {} from {} - {}",
+                         context.requestPath(), context.request().getRemoteAddr(), result.errorMessage());
+                sendUnauthorizedResponse(context.response(), result.errorMessage());
+            }
         }
-        
-        // Skip authentication if disabled (for local development)
-        if (!serviceAuthEnabled) {
-            log.warn("ServiceApiKeyFilter: Service authentication is DISABLED - allowing internal API access");
-            setServiceAuthentication("development-service");
-            chain.doFilter(request, response);
-            return;
-        }
-        
-        // Check for Kong consumer headers first (Kong has already validated the API key)
-        String kongConsumerId = httpRequest.getHeader(KONG_CONSUMER_ID_HEADER);
-        String kongConsumerUsername = httpRequest.getHeader(KONG_CONSUMER_USERNAME_HEADER);
-        
-        // If Kong consumer headers are present, Kong has already validated the API key
-        if (StringUtils.hasText(kongConsumerId) && StringUtils.hasText(kongConsumerUsername)) {
-            log.info("ServiceApiKeyFilter: Kong validated consumer '{}' (ID: {}), granting SERVICE access", 
-                     kongConsumerUsername, kongConsumerId);
-            setServiceAuthentication(kongConsumerUsername);
-            chain.doFilter(request, response);
-            return;
-        }
-        
-        // Fall back to direct API key validation (for direct service calls not through Kong)
-        String apiKey = httpRequest.getHeader(API_KEY_HEADER);
-        
-        if (!StringUtils.hasText(apiKey)) {
-            log.error("ServiceApiKeyFilter: No Kong consumer headers and missing X-API-Key header for request: {} from {}", 
-                     requestPath, httpRequest.getRemoteAddr());
-            sendUnauthorizedResponse(httpResponse, "Missing service API key or Kong consumer headers");
-            return;
-        }
-        
-        // For fallback validation, we can use a simple check or integrate with your existing validation logic
-        if (StringUtils.hasText(fallbackServiceApiKey) && !fallbackServiceApiKey.equals(apiKey)) {
-            log.error("ServiceApiKeyFilter: Invalid API key for direct service request: {} from {}", 
-                     requestPath, httpRequest.getRemoteAddr());
-            sendUnauthorizedResponse(httpResponse, "Invalid service API key");
-            return;
-        }
-        
-        // Set service authentication for fallback case
-        setServiceAuthentication("direct-service-call");
-        
-        log.info("ServiceApiKeyFilter: Direct API key authentication successful for request: {}", requestPath);
-        
-        chain.doFilter(request, response);
+    }
+
+    /**
+     * Functional predicate for Kong consumer header validation
+     */
+    private boolean hasKongConsumerHeaders(RequestContext context) {
+        return Optional.ofNullable(context.request().getHeader(KONG_CONSUMER_ID_HEADER))
+            .filter(StringUtils::hasText)
+            .flatMap(id -> Optional.ofNullable(context.request().getHeader(KONG_CONSUMER_USERNAME_HEADER))
+                .filter(StringUtils::hasText)
+                .map(username -> true))
+            .orElse(false);
+    }
+
+    /**
+     * Functional predicate for API key validation
+     */
+    private boolean hasValidApiKey(RequestContext context) {
+        return Optional.ofNullable(context.request().getHeader(API_KEY_HEADER))
+            .filter(StringUtils::hasText)
+            .filter(apiKey -> !StringUtils.hasText(fallbackServiceApiKey) ||
+                             fallbackServiceApiKey.equals(apiKey))
+            .isPresent();
     }
     
     /**
@@ -133,12 +173,127 @@ public class ServiceApiKeyFilter implements Filter {
     /**
      * Send unauthorized response
      */
-    private void sendUnauthorizedResponse(HttpServletResponse response, String message) 
+    private void sendUnauthorizedResponse(HttpServletResponse response, String message)
             throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
         response.getWriter().write(String.format(
             "{\"error\":\"SERVICE_AUTHENTICATION_FAILED\",\"message\":\"%s\",\"timestamp\":%d,\"service\":\"broker-auth-service\"}",
             message, System.currentTimeMillis()));
+    }
+
+    /**
+     * Immutable request context record - Rule #9 Immutability
+     */
+    private record RequestContext(
+        HttpServletRequest request,
+        HttpServletResponse response,
+        FilterChain chain,
+        String requestPath
+    ) {
+        public static RequestContext of(HttpServletRequest request, HttpServletResponse response, FilterChain chain) {
+            return new RequestContext(request, response, chain, request.getRequestURI());
+        }
+    }
+
+    /**
+     * Authentication strategy sealed class - Rule #14 Pattern Matching
+     */
+    private sealed interface AuthenticationStrategy {
+        AuthenticationResult executeStrategy(RequestContext context);
+
+        static AuthenticationStrategy development() {
+            return new DevelopmentStrategy();
+        }
+
+        static AuthenticationStrategy kongValidated() {
+            return new KongValidatedStrategy();
+        }
+
+        static AuthenticationStrategy directApiKey() {
+            return new DirectApiKeyStrategy();
+        }
+
+        static AuthenticationStrategy unauthorized(String message) {
+            return new UnauthorizedStrategy(message);
+        }
+
+        static AuthenticationStrategy bypass() {
+            return new BypassStrategy();
+        }
+    }
+
+    /**
+     * Strategy implementations using records - Rule #9 Immutability
+     */
+    private record DevelopmentStrategy() implements AuthenticationStrategy {
+        @Override
+        public AuthenticationResult executeStrategy(RequestContext context) {
+            return AuthenticationResult.success("development-service",
+                "Service authentication is DISABLED - allowing internal API access");
+        }
+    }
+
+    private record KongValidatedStrategy() implements AuthenticationStrategy {
+        @Override
+        public AuthenticationResult executeStrategy(RequestContext context) {
+            String konsumerId = context.request().getHeader(KONG_CONSUMER_ID_HEADER);
+            String consumerUsername = context.request().getHeader(KONG_CONSUMER_USERNAME_HEADER);
+            return AuthenticationResult.success(consumerUsername,
+                String.format("Kong validated consumer '%s' (ID: %s), granting SERVICE access",
+                             consumerUsername, konsumerId));
+        }
+    }
+
+    private record DirectApiKeyStrategy() implements AuthenticationStrategy {
+        @Override
+        public AuthenticationResult executeStrategy(RequestContext context) {
+            return AuthenticationResult.success("direct-service-call",
+                String.format("Direct API key authentication successful for request: %s",
+                             context.requestPath()));
+        }
+    }
+
+    private record UnauthorizedStrategy(String message) implements AuthenticationStrategy {
+        @Override
+        public AuthenticationResult executeStrategy(RequestContext context) {
+            return AuthenticationResult.failure(message);
+        }
+    }
+
+    private record BypassStrategy() implements AuthenticationStrategy {
+        @Override
+        public AuthenticationResult executeStrategy(RequestContext context) {
+            return AuthenticationResult.bypass();
+        }
+    }
+
+    /**
+     * Authentication result with pattern matching support - Rule #14
+     */
+    private record AuthenticationResult(
+        ResultType type,
+        String serviceId,
+        String errorMessage,
+        Optional<String> logMessage
+    ) {
+        public static AuthenticationResult success(String serviceId, String logMessage) {
+            return new AuthenticationResult(ResultType.SUCCESS, serviceId, null, Optional.of(logMessage));
+        }
+
+        public static AuthenticationResult bypass() {
+            return new AuthenticationResult(ResultType.BYPASS, null, null, Optional.empty());
+        }
+
+        public static AuthenticationResult failure(String errorMessage) {
+            return new AuthenticationResult(ResultType.FAILURE, null, errorMessage, Optional.empty());
+        }
+    }
+
+    /**
+     * Result type enumeration for pattern matching
+     */
+    private enum ResultType {
+        SUCCESS, BYPASS, FAILURE
     }
 }

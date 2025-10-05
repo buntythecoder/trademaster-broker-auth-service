@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.StructuredTaskScope;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -59,7 +60,7 @@ public class SecurityMediator {
             Supplier<CompletableFuture<T>> operation) {
         
         return CompletableFuture
-            .supplyAsync(() -> validateAuthentication(context))
+            .supplyAsync(() -> validateAuthentication(context), java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor())
             .thenCompose(result -> continueIfValid(result, this::authorizeAccess))
             .thenCompose(result -> continueIfValid(result, this::assessRisk))
             .thenCompose(result -> executeIfValid(result, operation))

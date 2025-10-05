@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,34 +100,52 @@ public class RiskAssessmentService {
         LocalDateTime lastRequest = lastRequestTime.get(key);
         LocalDateTime now = LocalDateTime.now();
         
-        // Reset counter if more than a minute has passed
-        if (lastRequest == null || lastRequest.isBefore(now.minusMinutes(1))) {
-            count.set(0);
-            lastRequestTime.put(key, now);
-        }
-        
+        // Functional reset counter logic - Rule #3 Functional Programming
+        Optional.ofNullable(lastRequest)
+            .filter(request -> request.isAfter(now.minusMinutes(1)))
+            .or(() -> {
+                count.set(0);
+                lastRequestTime.put(key, now);
+                return Optional.of(now);
+            });
+
         int currentCount = count.incrementAndGet();
-        return currentCount > BrokerAuthConstants.MAX_REQUESTS_PER_MINUTE 
-            ? BrokerAuthConstants.MAX_RISK_SCORE 
+        return currentCount > BrokerAuthConstants.MAX_REQUESTS_PER_MINUTE
+            ? BrokerAuthConstants.MAX_RISK_SCORE
             : (currentCount * BrokerAuthConstants.MAX_RISK_SCORE / BrokerAuthConstants.MAX_REQUESTS_PER_MINUTE);
     }
     
     private int assessTimingRisk(LocalDateTime timestamp) {
-        if (timestamp == null) return 10;
-        
-        LocalDateTime now = LocalDateTime.now();
-        long minutesAgo = java.time.Duration.between(timestamp, now).toMinutes();
-        
-        // Request too old or from the future
-        return minutesAgo > BrokerAuthConstants.TIMING_RISK_THRESHOLD_MINUTES || minutesAgo < 0 
-            ? BrokerAuthConstants.OLD_REQUEST_RISK_SCORE 
-            : 0;
+        return Optional.ofNullable(timestamp)
+            .map(ts -> {
+                LocalDateTime now = LocalDateTime.now();
+                long minutesAgo = java.time.Duration.between(ts, now).toMinutes();
+                return calculateTimingRiskScore(minutesAgo);
+            })
+            .orElse(10);
+    }
+
+    /**
+     * Functional timing risk calculation - Rule #3 Functional Programming
+     */
+    private int calculateTimingRiskScore(long minutesAgo) {
+        // Pattern matching for timing risk assessment - Rule #14
+        return switch (true) {
+            case boolean b when minutesAgo > BrokerAuthConstants.TIMING_RISK_THRESHOLD_MINUTES ->
+                BrokerAuthConstants.OLD_REQUEST_RISK_SCORE;
+            case boolean b when minutesAgo < 0 ->
+                BrokerAuthConstants.OLD_REQUEST_RISK_SCORE;
+            default -> 0;
+        };
     }
     
     private int assessUserAgentRisk(String userAgent) {
-        return userAgent == null || userAgent.trim().isEmpty() 
-            ? BrokerAuthConstants.MISSING_USER_AGENT_RISK_SCORE 
-            : 0;
+        // Functional user agent risk assessment - Rule #3
+        return Optional.ofNullable(userAgent)
+            .map(String::trim)
+            .filter(ua -> !ua.isEmpty())
+            .map(ua -> 0)
+            .orElse(BrokerAuthConstants.MISSING_USER_AGENT_RISK_SCORE);
     }
     
     private boolean isPrivateIp(String ip) {

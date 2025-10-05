@@ -8,8 +8,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.cloud.context.environment.EnvironmentChangeEvent;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.validation.constraints.NotNull;
 import java.util.Set;
 
 /**
@@ -23,6 +25,7 @@ import java.util.Set;
 @RefreshScope
 @EnableScheduling
 @ConfigurationProperties(prefix = "spring.cloud.config")
+@Validated
 @Slf4j
 public class ConfigClientConfig {
     

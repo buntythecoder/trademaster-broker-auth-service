@@ -14,6 +14,7 @@ public enum SecurityLevel {
     PUBLIC(0, "Public access - no authentication required"),
     STANDARD(1, "Standard authentication required"),
     ELEVATED(2, "Elevated security - MFA required"),
+    HIGH(2, "High security - MFA required"),
     CRITICAL(3, "Critical operations - additional verification required");
     
     private final int level;

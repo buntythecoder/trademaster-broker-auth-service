@@ -55,12 +55,30 @@ public class SecurityFacade {
     public <T> SecurityResult<T> secureExecuteSync(
             SecurityContext context,
             Function<SecurityContext, T> operation) {
-        
+
         try {
             log.debug("Synchronous security facade processing: {}", context.correlationId());
             return mediator.mediateAccessSync(context, operation);
         } catch (Exception e) {
-            log.error("Synchronous security facade error: correlation={}, error={}", 
+            log.error("Synchronous security facade error: correlation={}, error={}",
+                context.correlationId(), e.getMessage(), e);
+            return SecurityResult.failure(SecurityError.SYSTEM_ERROR, e.getMessage());
+        }
+    }
+
+    /**
+     * Secure access method for test compatibility
+     * MANDATORY: Functional Programming - Rule #3
+     */
+    public <T> SecurityResult<T> secureAccess(
+            SecurityContext context,
+            Supplier<T> operation) {
+
+        try {
+            log.debug("Security facade secure access: {}", context.correlationId());
+            return mediator.mediateAccessSync(context, ctx -> operation.get());
+        } catch (Exception e) {
+            log.error("Security facade secure access error: correlation={}, error={}",
                 context.correlationId(), e.getMessage(), e);
             return SecurityResult.failure(SecurityError.SYSTEM_ERROR, e.getMessage());
         }

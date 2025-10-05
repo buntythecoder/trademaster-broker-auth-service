@@ -3,7 +3,11 @@ package com.trademaster.brokerauth.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.util.Map;
 
 /**
@@ -21,6 +25,7 @@ import java.util.Map;
 @Component
 @ConfigurationProperties(prefix = "trademaster.security.kong")
 @Data
+@Validated
 public class KongConfiguration {
     
     /**

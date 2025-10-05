@@ -556,7 +556,10 @@ class BrokerAuthServiceIntegrationTest {
         // Then: Verify graceful failure handling
         assertThat(response).isNotNull();
         assertThat(response.success()).isFalse();
-        assertThat(response.message()).contains("unavailable").or().contains("failed");
+        assertThat(response.message()).satisfiesAnyOf(
+            msg -> assertThat(msg).contains("unavailable"),
+            msg -> assertThat(msg).contains("failed")
+        );
 
         // And: Verify no invalid session was created
         List<BrokerSession> sessions = brokerSessionRepository.findAll();

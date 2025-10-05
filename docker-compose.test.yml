@@ -1,0 +1,166 @@
+version: '3.8'
+
+# TradeMaster Broker Auth Service - Docker Compose Test Configuration
+# Tests Java 24 Virtual Threads + Functional Programming improvements
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: trademaster-postgres-test
+    environment:
+      POSTGRES_DB: trademaster_auth
+      POSTGRES_USER: trademaster
+      POSTGRES_PASSWORD: trademaster_pass
+      POSTGRES_MULTIPLE_DATABASES: broker_auth
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../scripts/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trademaster -d trademaster_auth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - trademaster-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: trademaster-redis-test
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - trademaster-network
+
+  # Consul Service Discovery
+  consul:
+    image: consul:1.16
+    container_name: trademaster-consul-test
+    ports:
+      - "8500:8500"
+    environment:
+      CONSUL_BIND_INTERFACE: eth0
+    command: >
+      consul agent
+      -server
+      -bootstrap-expect=1
+      -ui
+      -client=0.0.0.0
+      -bind=0.0.0.0
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - trademaster-network
+
+  # Broker Auth Service - Java 24 + Virtual Threads + Functional Programming
+  broker-auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trademaster-broker-auth-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    ports:
+      - "8084:8084"  # Application port
+      - "9084:9084"  # Management/Actuator port
+    environment:
+      # Spring Configuration
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8084
+
+      # Database Configuration
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: broker_auth
+      DATABASE_USERNAME: trademaster
+      DATABASE_PASSWORD: trademaster_pass
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # Consul Configuration
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: "true"
+      SPRING_CLOUD_CONSUL_DISCOVERY_REGISTER: "true"
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_ENABLED: "true"
+
+      # Wait for dependencies
+      WAIT_FOR_CONSUL: "true"
+      WAIT_FOR_POSTGRES: "true"
+      WAIT_FOR_REDIS: "true"
+
+      # Virtual Threads Performance Tuning
+      VIRTUAL_THREADS_OPTS: >-
+        -Djdk.virtualThreadScheduler.parallelism=200
+        -Djdk.virtualThreadScheduler.maxPoolSize=1000
+        -Dspring.threads.virtual.enabled=true
+        -Djdk.tracePinnedThreads=full
+
+      # Memory and GC Configuration for Testing
+      MEMORY_OPTS: "-Xms256m -Xmx1g"
+      JVM_OPTS: >-
+        --enable-preview
+        -XX:+UseZGC
+        -XX:+UseTransparentHugePages
+        -XX:MaxRAMPercentage=75.0
+        -Xlog:gc*:logs/gc.log:time,tags
+        -Djava.security.egd=file:/dev/./urandom
+
+      # Security and Logging
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_TRADEMASTER: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: DEBUG
+
+      # Functional Programming Features Testing
+      TRADEMASTER_FEATURES_FUNCTIONAL_PROGRAMMING: "true"
+      TRADEMASTER_FEATURES_PATTERN_MATCHING: "true"
+      TRADEMASTER_FEATURES_VIRTUAL_THREADS: "true"
+
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9084/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - trademaster-network
+    labels:
+      - "trademaster.service=broker-auth"
+      - "trademaster.version=1.0.0"
+      - "trademaster.java.version=24"
+      - "trademaster.features=virtual-threads,functional-programming,pattern-matching"
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  trademaster-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

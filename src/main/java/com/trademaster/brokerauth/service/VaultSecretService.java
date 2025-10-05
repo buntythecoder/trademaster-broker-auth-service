@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
  * HashiCorp Vault Secret Management Service
@@ -160,16 +161,8 @@ public class VaultSecretService {
         try {
             String vaultPath = buildVaultPath(path);
             
-            // Get existing secrets to preserve them
-            Map<String, Object> existingSecrets = new HashMap<>();
-            try {
-                VaultResponse response = vaultTemplate.read(vaultPath);
-                if (response != null && response.getData() != null) {
-                    existingSecrets.putAll(response.getData());
-                }
-            } catch (Exception e) {
-                log.debug("No existing secrets found at path: {}", vaultPath);
-            }
+            // Get existing secrets to preserve them - Rule #3 Functional Programming
+            Map<String, Object> existingSecrets = retrieveExistingSecrets(vaultPath);
             
             // Add/update the new secret
             existingSecrets.put(key, value);
@@ -206,21 +199,16 @@ public class VaultSecretService {
     private Optional<String> executeSecretRetrieval(String path, String key) {
         try {
             String vaultPath = buildVaultPath(path);
-            VaultResponse response = vaultTemplate.read(vaultPath);
-            
-            if (response == null || response.getData() == null) {
-                log.debug("No data found at path: {}", vaultPath);
-                return Optional.empty();
-            }
-            
-            Object value = response.getData().get(key);
-            if (value == null) {
-                log.debug("Key '{}' not found at path: {}", key, vaultPath);
-                return Optional.empty();
-            }
-            
-            return Optional.of(value.toString());
-            
+            return Optional.ofNullable(vaultTemplate.read(vaultPath))
+                .filter(response -> response.getData() != null)
+                .map(VaultResponse::getData)
+                .map(data -> data.get(key))
+                .filter(java.util.Objects::nonNull)
+                .map(Object::toString)
+                .or(() -> {
+                    log.debug("No data or key '{}' not found at path: {}", key, vaultPath);
+                    return Optional.empty();
+                });
         } catch (Exception e) {
             log.error("Failed to retrieve secret at path: {} key: {}", path, key, e);
             throw new RuntimeException("Secret retrieval failed", e);
@@ -230,26 +218,30 @@ public class VaultSecretService {
     private Map<String, String> executeBatchSecretRetrieval(String path) {
         try {
             String vaultPath = buildVaultPath(path);
-            VaultResponse response = vaultTemplate.read(vaultPath);
-            
-            if (response == null || response.getData() == null) {
-                log.debug("No data found at path: {}", vaultPath);
-                return Map.of();
-            }
-            
-            Map<String, String> secrets = new HashMap<>();
-            response.getData().forEach((key, value) -> {
-                if (value != null) {
-                    secrets.put(key, value.toString());
-                }
-            });
-            
-            return secrets;
-            
+            return Optional.ofNullable(vaultTemplate.read(vaultPath))
+                .filter(response -> response.getData() != null)
+                .map(VaultResponse::getData)
+                .map(this::convertToStringMap)
+                .orElseGet(() -> {
+                    log.debug("No data found at path: {}", vaultPath);
+                    return Map.of();
+                });
         } catch (Exception e) {
             log.error("Failed to retrieve batch secrets at path: {}", path, e);
             throw new RuntimeException("Batch secret retrieval failed", e);
         }
+    }
+
+    /**
+     * Functional conversion of vault data to string map - Rule #3 Functional Programming
+     */
+    private Map<String, String> convertToStringMap(Map<String, Object> vaultData) {
+        return vaultData.entrySet().stream()
+            .filter(entry -> entry.getValue() != null)
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> entry.getValue().toString()
+            ));
     }
     
     private boolean executeSecretDeletion(String path) {
@@ -278,11 +270,10 @@ public class VaultSecretService {
     }
     
     private String buildVaultPath(String path) {
-        // Ensure path starts with KV backend but avoid double prefixes
-        if (path.startsWith(kvBackend + "/")) {
-            return path;
-        }
-        return kvBackend + "/" + path;
+        // Functional path building with pattern matching - Rule #14 Pattern Matching
+        return Optional.of(path)
+            .filter(p -> p.startsWith(kvBackend + "/"))
+            .orElse(kvBackend + "/" + path);
     }
     
     // Validation methods using pattern matching
@@ -314,27 +305,46 @@ public class VaultSecretService {
     // Result handlers
     
     private Boolean handleSecretOperationResult(Boolean result, Throwable throwable) {
-        if (throwable != null) {
-            log.error("Vault operation failed", throwable);
-            return false;
-        }
-        return result;
+        return Optional.ofNullable(throwable)
+            .map(t -> {
+                log.error("Vault operation failed", t);
+                return false;
+            })
+            .orElse(result);
     }
-    
+
     private Optional<String> handleSecretRetrievalResult(Optional<String> result, Throwable throwable) {
-        if (throwable != null) {
-            log.error("Vault retrieval failed", throwable);
-            return Optional.empty();
-        }
-        return result;
+        return Optional.ofNullable(throwable)
+            .map(t -> {
+                log.error("Vault retrieval failed", t);
+                return Optional.<String>empty();
+            })
+            .orElse(result);
     }
-    
+
     private Map<String, String> handleBatchRetrievalResult(Map<String, String> result, Throwable throwable) {
-        if (throwable != null) {
-            log.error("Vault batch retrieval failed", throwable);
-            return Map.of();
+        return Optional.ofNullable(throwable)
+            .map(t -> {
+                log.error("Vault batch retrieval failed", t);
+                return Map.<String, String>of();
+            })
+            .orElse(result);
+    }
+
+    /**
+     * Functional existing secrets retrieval - Rule #3 Functional Programming
+     */
+    private Map<String, Object> retrieveExistingSecrets(String vaultPath) {
+        try {
+            return Optional.ofNullable(vaultTemplate.read(vaultPath))
+                .filter(response -> response.getData() != null)
+                .map(VaultResponse::getData)
+                .map(HashMap::new)
+                .orElse(new HashMap<>());
+        } catch (Exception e) {
+            log.debug("No existing secrets found at path: {}", vaultPath);
+            return new HashMap<>();
         }
-        return result;
     }
     
     // Validation enums

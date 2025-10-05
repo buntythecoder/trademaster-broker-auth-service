@@ -77,17 +77,17 @@ class ICICIDirectApiServiceTest {
     }
     
     @Test
-    void testAuthenticate_WithValidSessionToken_ReturnsSuccessfulResponse() 
+    void testAuthenticate_WithValidSessionToken_ReturnsSuccessfulResponse()
             throws IOException, ExecutionException, InterruptedException {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            "test_user",
-            "test_password",
-            "valid_session_token"
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .userId("test_user")
+            .password("test_password")
+            .totpCode("valid_session_token")
+            .build();
         
         String mockResponseBody = """
             {
@@ -115,17 +115,17 @@ class ICICIDirectApiServiceTest {
     }
     
     @Test
-    void testAuthenticate_WithInvalidSessionToken_ReturnsFailureResponse() 
+    void testAuthenticate_WithInvalidSessionToken_ReturnsFailureResponse()
             throws IOException, ExecutionException, InterruptedException {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            "test_user",
-            "test_password",
-            "invalid_session_token"
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .userId("test_user")
+            .password("test_password")
+            .totpCode("invalid_session_token")
+            .build();
         
         String mockResponseBody = """
             {
@@ -151,17 +151,16 @@ class ICICIDirectApiServiceTest {
     }
     
     @Test
-    void testAuthenticate_WithCredentials_ReturnsSessionTokenRequiredMessage() 
+    void testAuthenticate_WithCredentials_ReturnsSessionTokenRequiredMessage()
             throws ExecutionException, InterruptedException {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            "test_user",
-            "test_password",
-            null // No session token
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .userId("test_user")
+            .password("test_password")
+            .build(); // No session token
         
         // When
         CompletableFuture<AuthResponse> future = iciciDirectApiService.authenticate(authRequest);
@@ -175,17 +174,14 @@ class ICICIDirectApiServiceTest {
     }
     
     @Test
-    void testAuthenticate_WithInvalidParameters_ReturnsFailureResponse() 
+    void testAuthenticate_WithInvalidParameters_ReturnsFailureResponse()
             throws ExecutionException, InterruptedException {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            null, // No user ID
-            null, // No password
-            null  // No session token
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .build(); // No user ID, password, or session token
         
         // When
         CompletableFuture<AuthResponse> future = iciciDirectApiService.authenticate(authRequest);
@@ -246,17 +242,17 @@ class ICICIDirectApiServiceTest {
     }
     
     @Test
-    void testAuthenticate_WithNetworkError_ReturnsFailureResponse() 
+    void testAuthenticate_WithNetworkError_ReturnsFailureResponse()
             throws IOException, ExecutionException, InterruptedException {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            "test_user",
-            "test_password",
-            "session_token"
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .userId("test_user")
+            .password("test_password")
+            .totpCode("session_token")
+            .build();
         
         when(httpClient.newCall(any(Request.class))).thenReturn(call);
         when(call.execute()).thenThrow(new IOException("Network error"));
@@ -272,17 +268,17 @@ class ICICIDirectApiServiceTest {
     }
     
     @Test
-    void testAuthenticate_WithRateLimitError_ReturnsProperErrorMessage() 
+    void testAuthenticate_WithRateLimitError_ReturnsProperErrorMessage()
             throws IOException, ExecutionException, InterruptedException {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            "test_user",
-            "test_password",
-            "session_token"
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .userId("test_user")
+            .password("test_password")
+            .totpCode("session_token")
+            .build();
         
         Response mockResponse = createMockResponse(429, "Rate limit exceeded");
         setupMockHttpClient(mockResponse);
@@ -303,14 +299,14 @@ class ICICIDirectApiServiceTest {
     @Test
     void testAuthenticate_UsesVirtualThreads() {
         // Given
-        AuthRequest authRequest = new AuthRequest(
-            BrokerType.ICICI_DIRECT,
-            "test_api_key",
-            "test_api_secret",
-            "test_user",
-            "test_password",
-            "session_token"
-        );
+        AuthRequest authRequest = AuthRequest.builder()
+            .brokerType(BrokerType.ICICI_DIRECT)
+            .apiKey("test_api_key")
+            .apiSecret("test_api_secret")
+            .userId("test_user")
+            .password("test_password")
+            .totpCode("session_token")
+            .build();
         
         // When
         CompletableFuture<AuthResponse> future = iciciDirectApiService.authenticate(authRequest);

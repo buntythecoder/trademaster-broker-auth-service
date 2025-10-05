@@ -132,7 +132,7 @@ public class InternalServiceClient {
      */
     private HttpHeaders createServiceHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Service-API-Key", serviceApiKey);
+        headers.set("X-API-Key", serviceApiKey);
         headers.set("X-Service-ID", serviceName);
         headers.set("Content-Type", "application/json");
         headers.set("Accept", "application/json");

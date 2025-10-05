@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -50,8 +51,8 @@ public class BrokerSessionService {
     
     public void revokeSession(String sessionId) {
         getSession(sessionId).ifPresent(session -> {
-            session.setStatus(SessionStatus.REVOKED);
-            saveSession(session);
+            BrokerSession revokedSession = session.withStatus(SessionStatus.REVOKED);
+            saveSession(revokedSession);
             log.info("Session revoked: {}", sessionId);
         });
     }
@@ -84,45 +85,92 @@ public class BrokerSessionService {
     }
     
     /**
-     * Get user's active sessions
+     * Get user's active sessions - Rule #3 Functional Programming
      */
     public List<BrokerSession> getUserActiveSessions(String userId) {
-        try {
-            Set<String> keys = redisTemplate.keys(BrokerAuthConstants.SESSION_KEY_PREFIX + "*");
-            if (keys == null) {
+        return executeWithErrorHandling(
+            () -> Optional.ofNullable(redisTemplate.keys(BrokerAuthConstants.SESSION_KEY_PREFIX + "*"))
+                .map(this::extractActiveSessions)
+                .map(sessions -> filterUserSessions(sessions, userId))
+                .orElse(List.of()),
+            () -> {
+                log.warn("Failed to get user active sessions for userId: {}", userId);
                 return List.of();
             }
-            
-            return keys.stream()
-                .map(key -> redisTemplate.opsForValue().get(key))
-                .filter(session -> session != null)
-                .filter(session -> userId.equals(session.getUserId()))
-                .filter(session -> session.getStatus() == SessionStatus.ACTIVE)
-                .filter(session -> session.getExpiresAt().isAfter(LocalDateTime.now()))
-                .collect(Collectors.toList());
-        } catch (Exception e) {
-            log.warn("Failed to get user active sessions for userId: {}", userId, e);
-            return List.of();
-        }
+        );
+    }
+
+    /**
+     * Functional session extraction pipeline
+     */
+    private List<BrokerSession> extractActiveSessions(Set<String> keys) {
+        return keys.stream()
+            .map(key -> redisTemplate.opsForValue().get(key))
+            .filter(java.util.Objects::nonNull)
+            .filter(this::isActiveSession)
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Functional user session filtering
+     */
+    private List<BrokerSession> filterUserSessions(List<BrokerSession> sessions, String userId) {
+        return sessions.stream()
+            .filter(session -> userId.equals(session.getUserId()))
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Functional predicate for active session validation
+     */
+    private boolean isActiveSession(BrokerSession session) {
+        return session.getStatus() == SessionStatus.ACTIVE &&
+               session.getExpiresAt().isAfter(LocalDateTime.now());
     }
     
     /**
-     * Update session last access time
+     * Update session last access time - Rule #3 Functional Programming
      */
     public boolean updateLastAccess(String sessionId) {
-        try {
-            Optional<BrokerSession> sessionOpt = getSession(sessionId);
-            if (sessionOpt.isPresent()) {
-                BrokerSession session = sessionOpt.get();
-                session.setLastAccessedAt(LocalDateTime.now());
-                saveSession(session);
-                log.debug("Updated last access time for session: {}", sessionId);
-                return true;
+        return executeWithErrorHandling(
+            () -> getSession(sessionId)
+                .map(this::updateSessionAccess)
+                .map(this::persistUpdatedSession)
+                .map(session -> {
+                    log.debug("Updated last access time for session: {}", sessionId);
+                    return true;
+                })
+                .orElse(false),
+            () -> {
+                log.warn("Failed to update last access for session: {}", sessionId);
+                return false;
             }
-            return false;
+        );
+    }
+
+    /**
+     * Functional session access update
+     */
+    private BrokerSession updateSessionAccess(BrokerSession session) {
+        return session.withLastAccessed(LocalDateTime.now());
+    }
+
+    /**
+     * Functional session persistence
+     */
+    private BrokerSession persistUpdatedSession(BrokerSession session) {
+        saveSession(session);
+        return session;
+    }
+
+    /**
+     * Functional error handling wrapper - Rule #11 Error Handling
+     */
+    private <T> T executeWithErrorHandling(java.util.function.Supplier<T> operation, java.util.function.Supplier<T> fallback) {
+        try {
+            return operation.get();
         } catch (Exception e) {
-            log.warn("Failed to update last access for session: {}", sessionId, e);
-            return false;
+            return fallback.get();
         }
     }
 }

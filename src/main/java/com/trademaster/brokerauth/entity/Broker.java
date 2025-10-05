@@ -2,8 +2,10 @@ package com.trademaster.brokerauth.entity;
 
 import com.trademaster.brokerauth.enums.BrokerType;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -14,13 +16,15 @@ import java.util.Map;
  * MANDATORY: JPA Entity for data persistence - Rule #1
  */
 @Entity
-@Table(name = "brokers", 
+@Table(name = "brokers",
        indexes = {
            @Index(name = "idx_broker_type", columnList = "broker_type"),
            @Index(name = "idx_broker_active", columnList = "is_active")
        })
 @Data
-@RequiredArgsConstructor
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Broker {
     
     @Id
@@ -37,6 +41,7 @@ public class Broker {
     @Column(name = "api_url", nullable = false, length = 255)
     private String apiUrl;
     
+    @Builder.Default
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
     
@@ -62,8 +67,18 @@ public class Broker {
         this.updatedAt = LocalDateTime.now();
     }
     
-    @PreUpdate  
+    @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Builder extension for test compatibility
+     */
+    public static class BrokerBuilder {
+        public BrokerBuilder type(BrokerType brokerType) {
+            this.brokerType = brokerType;
+            return this;
+        }
     }
 }

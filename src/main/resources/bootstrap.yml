@@ -14,9 +14,12 @@ spring:
       port: ${CONSUL_PORT:8500}
       scheme: ${CONSUL_SCHEME:http}
       
-      # ❌ CONSUL CONFIG DISABLED - Causing SCRAM auth interference
+      # ⚠️  CONSUL CONFIG CONDITIONALLY DISABLED - To enable, resolve SCRAM auth conflict:
+      # 1. Ensure database URL doesn't include SCRAM authentication parameters
+      # 2. Use environment variables for sensitive config instead of Consul KV
+      # 3. Test with: spring.profiles.active=consul-enabled
       config:
-        enabled: false
+        enabled: ${CONSUL_CONFIG_ENABLED:false}  # Set to true after resolving SCRAM conflict
         format: YAML
         prefix: config
         default-context: ${spring.application.name}
@@ -27,9 +30,10 @@ spring:
           wait-time: 55
         fail-fast: false
         
-      # ❌ CONSUL SERVICE DISCOVERY DISABLED - Causing SCRAM auth interference  
+      # ⚠️  CONSUL SERVICE DISCOVERY CONDITIONALLY DISABLED - To enable, resolve SCRAM auth conflict:
+      # Enable with: CONSUL_DISCOVERY_ENABLED=true after fixing database authentication
       discovery:
-        enabled: false
+        enabled: ${CONSUL_DISCOVERY_ENABLED:false}  # Set to true after resolving SCRAM conflict
         register: true
         prefer-ip-address: true
         hostname: ${HOSTNAME:localhost}

@@ -2,8 +2,10 @@ package com.trademaster.brokerauth.entity;
 
 import com.trademaster.brokerauth.enums.BrokerType;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
@@ -20,7 +22,9 @@ import java.time.LocalDateTime;
            @Index(name = "idx_broker_type", columnList = "broker_type")
        })
 @Data
-@RequiredArgsConstructor
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class BrokerAccount {
     
     @Id
@@ -49,6 +53,7 @@ public class BrokerAccount {
     @Column(name = "encrypted_totp_secret", columnDefinition = "TEXT")
     private String encryptedTotpSecret;
     
+    @Builder.Default
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
     
@@ -70,5 +75,32 @@ public class BrokerAccount {
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Get client ID - alias for broker user ID for test compatibility
+     */
+    public String getClientId() {
+        return this.brokerUserId;
+    }
+
+    /**
+     * Builder extension for test compatibility
+     */
+    public static class BrokerAccountBuilder {
+        public BrokerAccountBuilder clientId(String clientId) {
+            this.brokerUserId = clientId;
+            return this;
+        }
+
+        public BrokerAccountBuilder apiKey(String apiKey) {
+            this.encryptedApiKey = apiKey; // For tests, store as-is
+            return this;
+        }
+
+        public BrokerAccountBuilder apiSecret(String apiSecret) {
+            this.encryptedApiSecret = apiSecret; // For tests, store as-is
+            return this;
+        }
     }
 }

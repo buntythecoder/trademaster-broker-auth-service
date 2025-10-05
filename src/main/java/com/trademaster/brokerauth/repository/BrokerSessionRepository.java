@@ -33,6 +33,12 @@ public interface BrokerSessionRepository extends JpaRepository<BrokerSession, Lo
                                             @Param("currentTime") LocalDateTime currentTime);
     
     /**
+     * Find session by session ID
+     * MANDATORY: Session lookup by ID - Rule #23
+     */
+    Optional<BrokerSession> findBySessionId(String sessionId);
+
+    /**
      * Find session by access token
      * MANDATORY: Token-based authentication - Rule #23
      */

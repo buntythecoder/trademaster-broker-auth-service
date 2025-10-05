@@ -1,0 +1,172 @@
+# Kong Gateway Configuration for Broker Auth Service
+# TradeMaster Golden Specification Compliance
+
+# Kong Gateway Configuration
+kong:
+  gateway_url: ${KONG_API_GATEWAY_URL:http://kong:8000}
+  admin_url: ${KONG_ADMIN_URL:http://kong:8001}
+  timeout: 30000  # 30 seconds
+  connect_timeout: 5000  # 5 seconds
+  retries: 3
+
+# Service Authentication Configuration
+service-auth:
+  enabled: ${SERVICE_AUTH_ENABLED:true}
+  header_name: ${SERVICE_TO_SERVICE_AUTH_HEADER:X-API-Key}
+
+  # Service-specific API Keys (MUST be environment variables in production)
+  broker-auth:
+    primary_key: ${BROKER_AUTH_SERVICE_API_KEY}
+    backup_key: ${BROKER_AUTH_SERVICE_BACKUP_API_KEY}
+    consumer: "broker-auth-service-internal"
+
+  # Other TradeMaster services
+  trading:
+    primary_key: ${TRADING_SERVICE_API_KEY}
+    backup_key: ${TRADING_SERVICE_BACKUP_API_KEY}
+    consumer: "trading-service-internal"
+
+  event-bus:
+    primary_key: ${EVENT_BUS_SERVICE_API_KEY}
+    backup_key: ${EVENT_BUS_SERVICE_BACKUP_API_KEY}
+    consumer: "event-bus-service-internal"
+
+  notification:
+    primary_key: ${NOTIFICATION_SERVICE_API_KEY}
+    backup_key: ${NOTIFICATION_SERVICE_BACKUP_API_KEY}
+    consumer: "notification-service-internal"
+
+  subscription:
+    primary_key: ${SUBSCRIPTION_SERVICE_API_KEY}
+    backup_key: ${SUBSCRIPTION_SERVICE_BACKUP_API_KEY}
+    consumer: "subscription-service-internal"
+
+# Internal Service URLs (via Kong Gateway)
+internal-services:
+  trading: ${TRADING_INTERNAL_URL:http://kong:8000/internal/trading}
+  event-bus: ${EVENT_BUS_INTERNAL_URL:http://kong:8000/internal/events}
+  notification: ${NOTIFICATION_INTERNAL_URL:http://kong:8000/internal/notification}
+  subscription: ${SUBSCRIPTION_INTERNAL_URL:http://kong:8000/internal/subscription}
+  portfolio: ${PORTFOLIO_INTERNAL_URL:http://kong:8000/internal/portfolio}
+
+# Circuit Breaker Configuration
+circuit-breaker:
+  enabled: true
+  failure_threshold: 5
+  timeout: 30000  # 30 seconds
+  recovery_timeout: 60000  # 1 minute
+
+  # Service-specific circuit breaker settings
+  services:
+    trading:
+      failure_threshold: 3
+      timeout: 15000  # 15 seconds (trading is time-sensitive)
+      recovery_timeout: 30000
+
+    event-bus:
+      failure_threshold: 5
+      timeout: 10000  # 10 seconds (events should be fast)
+      recovery_timeout: 45000
+
+    notification:
+      failure_threshold: 10
+      timeout: 45000  # 45 seconds (notifications can be slower)
+      recovery_timeout: 120000
+
+# Service Discovery Integration
+consul:
+  enabled: ${CONSUL_ENABLED:true}
+  host: ${CONSUL_HOST:consul}
+  port: ${CONSUL_PORT:8500}
+  health_check_interval: 30  # seconds
+  service_discovery_timeout: 5000  # 5 seconds
+
+# Authentication Service Specific Configuration
+broker-auth:
+  # Supported brokers for service discovery
+  supported_brokers:
+    - ZERODHA
+    - UPSTOX
+    - ANGEL_ONE
+    - ICICI_DIRECT
+    - FYERS
+    - ALICE_BLUE
+
+  # Broker API integration timeouts
+  broker_api_timeouts:
+    login: 30000  # 30 seconds
+    order_placement: 15000  # 15 seconds
+    portfolio_fetch: 20000  # 20 seconds
+    market_data: 10000  # 10 seconds
+
+  # Session management
+  session:
+    default_timeout: 3600  # 1 hour
+    max_concurrent_sessions: 10
+    cleanup_interval: 300  # 5 minutes
+
+# Rate Limiting Configuration
+rate_limiting:
+  enabled: true
+
+  # Authentication endpoints
+  authentication:
+    requests_per_minute: 60
+    burst_limit: 10
+
+  # Broker API operations
+  broker_operations:
+    requests_per_minute: 100
+    burst_limit: 20
+
+  # Internal API calls
+  internal_api:
+    requests_per_minute: 1000
+    burst_limit: 100
+
+# Monitoring and Observability
+monitoring:
+  metrics:
+    enabled: true
+    endpoint: "/actuator/prometheus"
+    interval: 30  # seconds
+
+  tracing:
+    enabled: true
+    sample_rate: 0.1  # 10% sampling
+
+  logging:
+    level: INFO
+    structured: true
+    include_request_id: true
+
+# Security Configuration
+security:
+  # JWT Configuration for external APIs
+  jwt:
+    issuer: "trademaster-broker-auth-service"
+    audience: "trademaster-api"
+    algorithm: "HS256"
+
+  # API Key validation
+  api_key:
+    validation_enabled: true
+    cache_ttl: 300  # 5 minutes
+
+  # Audit logging
+  audit:
+    enabled: true
+    log_all_requests: false  # Only log sensitive operations
+    include_request_body: false  # Security consideration
+    include_response_body: false
+
+# Development and Testing
+development:
+  # Mock broker responses for testing
+  mock_brokers: ${DEV_MOCK_BROKERS:false}
+
+  # Bypass authentication for testing
+  bypass_auth: ${DEV_BYPASS_AUTH:false}
+
+  # Enhanced logging for debugging
+  debug_logging: ${DEV_DEBUG_LOGGING:false}

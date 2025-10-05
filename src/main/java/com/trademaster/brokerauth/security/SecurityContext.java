@@ -116,6 +116,11 @@ public record SecurityContext(
             this.requiredLevel = requiredLevel;
             return this;
         }
+
+        public Builder securityLevel(SecurityLevel securityLevel) {
+            this.requiredLevel = securityLevel;
+            return this;
+        }
         
         public Builder attributes(Map<String, String> attributes) {
             this.attributes = attributes;

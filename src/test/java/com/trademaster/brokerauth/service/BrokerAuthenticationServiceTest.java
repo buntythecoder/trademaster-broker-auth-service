@@ -47,7 +47,13 @@ class BrokerAuthenticationServiceTest {
     @Test
     void authenticate_withSupportedBroker_shouldReturnSuccessfulResponse() {
         // Given
-        AuthRequest request = new AuthRequest(BrokerType.ZERODHA, "test-key", "test-secret", "testuser", null, "123456");
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ZERODHA)
+            .apiKey("test-key")
+            .apiSecret("test-secret")
+            .userId("testuser")
+            .totpCode("123456")
+            .build();
         AuthResponse expectedResponse = new AuthResponse(
             "session-123",
             "access-token-123",
@@ -80,7 +86,12 @@ class BrokerAuthenticationServiceTest {
     @Test
     void authenticate_withUnsupportedBroker_shouldReturnFailureResponse() {
         // Given
-        AuthRequest request = new AuthRequest(BrokerType.UPSTOX, "test-key", "test-secret", "testuser", null, null);
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.UPSTOX)
+            .apiKey("test-key")
+            .apiSecret("test-secret")
+            .userId("testuser")
+            .build();
         
         when(brokerServiceFactory.getBrokerService(BrokerType.UPSTOX))
             .thenReturn(Optional.empty());
@@ -101,7 +112,12 @@ class BrokerAuthenticationServiceTest {
     @Test
     void authenticate_withFailedBrokerAuthentication_shouldReturnFailureResponse() {
         // Given
-        AuthRequest request = new AuthRequest(BrokerType.ZERODHA, "invalid-key", "invalid-secret", "testuser", null, null);
+        AuthRequest request = AuthRequest.builder()
+            .brokerType(BrokerType.ZERODHA)
+            .apiKey("invalid-key")
+            .apiSecret("invalid-secret")
+            .userId("testuser")
+            .build();
         AuthResponse failureResponse = new AuthResponse(
             null, null, null, BrokerType.ZERODHA, null, false, "Invalid credentials"
         );

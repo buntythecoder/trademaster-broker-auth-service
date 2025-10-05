@@ -33,6 +33,11 @@ public sealed interface SecurityResult<T> permits SecurityResult.Success, Securi
      * Execute side effect on success
      */
     SecurityResult<T> peek(java.util.function.Consumer<T> action);
+
+    /**
+     * Pattern matching for functional programming
+     */
+    <U> U match(Function<T, U> onSuccess, Function<SecurityError, U> onFailure);
     
     record Success<T>(T value, SecurityContext context) implements SecurityResult<T> {
         
@@ -78,6 +83,11 @@ public sealed interface SecurityResult<T> permits SecurityResult.Success, Securi
                 return new Failure<>(SecurityError.SIDE_EFFECT_ERROR, e.getMessage());
             }
         }
+
+        @Override
+        public <U> U match(Function<T, U> onSuccess, Function<SecurityError, U> onFailure) {
+            return onSuccess.apply(value);
+        }
     }
     
     record Failure<T>(SecurityError error, String message) implements SecurityResult<T> {
@@ -110,6 +120,11 @@ public sealed interface SecurityResult<T> permits SecurityResult.Success, Securi
         @Override
         public SecurityResult<T> peek(java.util.function.Consumer<T> action) {
             return this;
+        }
+
+        @Override
+        public <U> U match(Function<T, U> onSuccess, Function<SecurityError, U> onFailure) {
+            return onFailure.apply(error);
         }
     }
     
