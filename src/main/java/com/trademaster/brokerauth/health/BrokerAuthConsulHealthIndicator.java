@@ -3,8 +3,8 @@ package com.trademaster.brokerauth.health;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.actuator.health.Health;
-import org.springframework.boot.actuator.health.HealthIndicator;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -21,13 +21,16 @@ import java.time.Instant;
  * MANDATORY: Consul connectivity validation
  * MANDATORY: Service discovery health monitoring
  *
+ * Renamed to BrokerAuthConsulHealthIndicator to avoid bean name conflict
+ * with Spring Cloud Consul's auto-configured consulHealthIndicator bean.
+ *
  * @author TradeMaster Development Team
  * @version 1.0.0
  */
-@Component
+@Component("brokerAuthConsulHealthIndicator")
 @RequiredArgsConstructor
 @Slf4j
-public class ConsulHealthIndicator implements HealthIndicator {
+public class BrokerAuthConsulHealthIndicator implements HealthIndicator {
 
     @Value("${spring.cloud.consul.host:consul}")
     private String consulHost;

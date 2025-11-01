@@ -5,12 +5,15 @@ import com.trademaster.brokerauth.entity.BrokerSession;
 import com.trademaster.brokerauth.enums.SessionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -59,11 +62,18 @@ public class BrokerSessionService {
     
     /**
      * Get active session count for monitoring
+     *
+     * MANDATORY: Rule #22 - Performance optimization with Redis SCAN
+     *
+     * Uses SCAN instead of KEYS for non-blocking iteration.
+     * KEYS command blocks Redis and has O(N) complexity - NEVER use in production!
+     * SCAN command is non-blocking and suitable for production use.
+     *
+     * Performance: O(N) but non-blocking, safe for production
      */
     public int getActiveSessionCount() {
         try {
-            Set<String> keys = redisTemplate.keys(BrokerAuthConstants.SESSION_KEY_PREFIX + "*");
-            return keys != null ? keys.size() : 0;
+            return scanSessionKeys().size();
         } catch (Exception e) {
             log.warn("Failed to get active session count", e);
             return 0;
@@ -86,13 +96,20 @@ public class BrokerSessionService {
     
     /**
      * Get user's active sessions - Rule #3 Functional Programming
+     *
+     * MANDATORY: Rule #22 - Performance optimization with Redis SCAN
+     *
+     * Uses SCAN instead of KEYS for non-blocking iteration.
+     * Performance: O(N) but non-blocking, safe for production
      */
     public List<BrokerSession> getUserActiveSessions(String userId) {
         return executeWithErrorHandling(
-            () -> Optional.ofNullable(redisTemplate.keys(BrokerAuthConstants.SESSION_KEY_PREFIX + "*"))
-                .map(this::extractActiveSessions)
-                .map(sessions -> filterUserSessions(sessions, userId))
-                .orElse(List.of()),
+            () -> {
+                List<String> keys = scanSessionKeys();
+                return extractActiveSessions(keys).stream()
+                    .filter(session -> userId.equals(session.getUserId()))
+                    .collect(Collectors.toList());
+            },
             () -> {
                 log.warn("Failed to get user active sessions for userId: {}", userId);
                 return List.of();
@@ -101,22 +118,64 @@ public class BrokerSessionService {
     }
 
     /**
-     * Functional session extraction pipeline
+     * Get active session for user and broker type - Rule #3 Functional Programming
      */
-    private List<BrokerSession> extractActiveSessions(Set<String> keys) {
+    public Optional<BrokerSession> getActiveSession(String userId, com.trademaster.brokerauth.enums.BrokerType brokerType) {
+        return executeWithErrorHandling(
+            () -> getUserActiveSessions(userId).stream()
+                .filter(session -> session.getBrokerType() == brokerType)
+                .filter(BrokerSession::isActive)
+                .findFirst(),
+            () -> {
+                log.warn("Failed to get active session for userId: {} brokerType: {}", userId, brokerType);
+                return Optional.empty();
+            }
+        );
+    }
+
+    /**
+     * Scan Redis keys using non-blocking SCAN command
+     *
+     * MANDATORY: Rule #22 - Performance Standards
+     *
+     * SCAN is production-safe, KEYS is not!
+     * - KEYS: Blocks Redis, O(N) time all at once
+     * - SCAN: Non-blocking, iterative O(N) time
+     *
+     * Performance: Safe for production, no Redis blocking
+     */
+    private List<String> scanSessionKeys() {
+        List<String> keys = new ArrayList<>();
+        ScanOptions options = ScanOptions.scanOptions()
+            .match(BrokerAuthConstants.SESSION_KEY_PREFIX + "*")
+            .count(100) // Scan 100 keys per iteration
+            .build();
+
+        try (Cursor<byte[]> cursor = redisTemplate.executeWithStickyConnection(
+                connection -> connection.scan(options))) {
+            while (cursor.hasNext()) {
+                keys.add(new String(cursor.next()));
+            }
+        } catch (Exception e) {
+            log.warn("Error scanning session keys", e);
+        }
+
+        return keys;
+    }
+
+    /**
+     * Functional session extraction pipeline
+     *
+     * MANDATORY: Rule #22 - Performance optimization
+     *
+     * Efficiently extracts active sessions from Redis keys.
+     * Uses Stream API for functional pipeline processing.
+     */
+    private List<BrokerSession> extractActiveSessions(List<String> keys) {
         return keys.stream()
             .map(key -> redisTemplate.opsForValue().get(key))
             .filter(java.util.Objects::nonNull)
             .filter(this::isActiveSession)
-            .collect(Collectors.toList());
-    }
-
-    /**
-     * Functional user session filtering
-     */
-    private List<BrokerSession> filterUserSessions(List<BrokerSession> sessions, String userId) {
-        return sessions.stream()
-            .filter(session -> userId.equals(session.getUserId()))
             .collect(Collectors.toList());
     }
 

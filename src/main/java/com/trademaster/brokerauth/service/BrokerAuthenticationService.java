@@ -75,10 +75,14 @@ public class BrokerAuthenticationService {
      * MANDATORY: Immutable data - Rule #9
      */
     private BrokerSession createBrokerSession(AuthRequest request, AuthResponse authResponse) {
+        String userId = Optional.ofNullable(request.userId()).orElse("anonymous");
+        String vaultPath = String.format("secret/data/trademaster/broker-sessions/%s/%s",
+            userId, request.brokerType().name().toLowerCase());
+
         return new BrokerSession(
             null,
             authResponse.sessionId(),
-            Optional.ofNullable(request.userId()).orElse("anonymous"),
+            userId,
             request.brokerType(),
             authResponse.accessToken(),
             authResponse.refreshToken(),
@@ -87,7 +91,8 @@ public class BrokerAuthenticationService {
             authResponse.expiresAt(),
             LocalDateTime.now(),
             LocalDateTime.now(),
-            null  // metadata - can be populated later if needed
+            null,  // metadata - can be populated later if needed
+            vaultPath
         );
     }
     

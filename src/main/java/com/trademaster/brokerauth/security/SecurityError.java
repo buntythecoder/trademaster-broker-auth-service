@@ -32,6 +32,7 @@ public enum SecurityError {
     OPERATION_FAILED("SYS_002", "Operation failed"),
     MAPPING_ERROR("SYS_003", "Data mapping error"),
     SIDE_EFFECT_ERROR("SYS_004", "Side effect execution error"),
+    RECOVERY_FAILED("SYS_005", "Error recovery operation failed"),
     
     // Validation Errors
     INVALID_INPUT("VAL_001", "Invalid input provided"),

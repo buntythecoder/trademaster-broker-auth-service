@@ -1,0 +1,79 @@
+spring:
+  # Virtual Threads enabled for testing
+  threads:
+    virtual:
+      enabled: true
+
+  # JPA Configuration for tests
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Flyway disabled for tests (DDL auto handles schema)
+  flyway:
+    enabled: false
+
+  # Redis Configuration for tests - Use RESP2 protocol to avoid RESP3 authentication issues
+  data:
+    redis:
+      client-type: lettuce
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # Consul disabled for tests
+  cloud:
+    consul:
+      enabled: false
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+
+# Security Configuration for tests
+trademaster:
+  security:
+    encryption:
+      key: dHJhZGVtYXN0ZXItZW5jcnlwdGlvbi1rZXktMzJiISE=  # base64 "trademaster-encryption-key-32b!!" (EXACTLY 32 bytes for AES-256)
+  jwt:
+    secret: test-jwt-secret-key-for-testing-purposes-must-be-at-least-32-characters-long
+    expiration: 3600000
+  rate-limit:
+    requests-per-minute: 1000
+  session:
+    timeout-minutes: 30
+
+# Circuit Breaker Configuration for tests
+resilience4j:
+  circuitbreaker:
+    instances:
+      broker-api:
+        failure-rate-threshold: 50
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        wait-duration-in-open-state: 60000
+  retry:
+    instances:
+      broker-api:
+        max-attempts: 3
+        wait-duration: 1000
+
+# Logging Configuration for tests
+logging:
+  level:
+    root: INFO
+    com.trademaster: DEBUG
+    com.trademaster.brokerauth.service.VaultSecretService: TRACE
+    com.trademaster.brokerauth.service.EncryptionService: DEBUG
+    org.springframework.vault: DEBUG
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.testcontainers: INFO

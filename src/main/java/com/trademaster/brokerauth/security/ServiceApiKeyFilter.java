@@ -49,6 +49,7 @@ public class ServiceApiKeyFilter implements Filter {
     private static final String SERVICE_ID_HEADER = "X-Service-ID";
     private static final String KONG_CONSUMER_ID_HEADER = "X-Consumer-ID";
     private static final String KONG_CONSUMER_USERNAME_HEADER = "X-Consumer-Username";
+    private static final String CORRELATION_ID_HEADER = "X-Correlation-ID";
     private static final String INTERNAL_API_PATH = "/api/internal/";
     
     @Value("${trademaster.security.service.api-key:}")
@@ -69,11 +70,17 @@ public class ServiceApiKeyFilter implements Filter {
 
     /**
      * Functional request processing pipeline - Rule #3 Functional Programming
+     *
+     * MANDATORY: Rule #15 - Structured logging with correlation IDs
      */
     private void processRequest(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws IOException, ServletException {
 
+        long startTime = System.nanoTime();
         RequestContext context = RequestContext.of(request, response, chain);
+
+        log.debug("ServiceApiKeyFilter processing: path={}, correlation={}, remoteAddr={}, method={}",
+            context.requestPath(), context.correlationId(), request.getRemoteAddr(), request.getMethod());
 
         // Functional pipeline with pattern matching
         AuthenticationResult result = Optional.of(context)
@@ -84,6 +91,10 @@ public class ServiceApiKeyFilter implements Filter {
 
         // Pattern matching for result handling
         handleAuthenticationResult(result, context);
+
+        long duration = (System.nanoTime() - startTime) / 1_000_000; // Convert to milliseconds
+        log.debug("ServiceApiKeyFilter completed: correlation={}, duration={}ms, result={}",
+            context.correlationId(), duration, result.type());
     }
 
     /**
@@ -111,6 +122,8 @@ public class ServiceApiKeyFilter implements Filter {
 
     /**
      * Pattern matching for result handling
+     *
+     * MANDATORY: Rule #15 - Structured logging with correlation IDs
      */
     private void handleAuthenticationResult(AuthenticationResult result, RequestContext context)
             throws IOException, ServletException {
@@ -118,16 +131,20 @@ public class ServiceApiKeyFilter implements Filter {
         switch (result.type()) {
             case SUCCESS -> {
                 setServiceAuthentication(result.serviceId());
-                result.logMessage().ifPresent(msg -> log.info("ServiceApiKeyFilter: {}", msg));
+                result.logMessage().ifPresent(msg ->
+                    log.info("ServiceApiKeyFilter SUCCESS: correlation={}, serviceId={}, path={}, message={}",
+                        context.correlationId(), result.serviceId(), context.requestPath(), msg));
                 context.chain().doFilter(context.request(), context.response());
             }
             case BYPASS -> {
+                log.debug("ServiceApiKeyFilter BYPASS: correlation={}, path={} - Not internal API, bypassing authentication",
+                    context.correlationId(), context.requestPath());
                 context.chain().doFilter(context.request(), context.response());
             }
             case FAILURE -> {
-                log.error("ServiceApiKeyFilter: Authentication failed for request: {} from {} - {}",
-                         context.requestPath(), context.request().getRemoteAddr(), result.errorMessage());
-                sendUnauthorizedResponse(context.response(), result.errorMessage());
+                log.error("ServiceApiKeyFilter FAILURE: correlation={}, path={}, remoteAddr={}, error={}",
+                    context.correlationId(), context.requestPath(), context.request().getRemoteAddr(), result.errorMessage());
+                sendUnauthorizedResponse(context.response(), result.errorMessage(), context.correlationId());
             }
         }
     }
@@ -171,28 +188,37 @@ public class ServiceApiKeyFilter implements Filter {
     }
     
     /**
-     * Send unauthorized response
+     * Send unauthorized response with correlation ID
+     *
+     * MANDATORY: Rule #15 - Include correlation ID in error responses
      */
-    private void sendUnauthorizedResponse(HttpServletResponse response, String message)
+    private void sendUnauthorizedResponse(HttpServletResponse response, String message, String correlationId)
             throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
         response.getWriter().write(String.format(
-            "{\"error\":\"SERVICE_AUTHENTICATION_FAILED\",\"message\":\"%s\",\"timestamp\":%d,\"service\":\"broker-auth-service\"}",
-            message, System.currentTimeMillis()));
+            "{\"error\":\"SERVICE_AUTHENTICATION_FAILED\",\"message\":\"%s\",\"timestamp\":%d,\"service\":\"broker-auth-service\",\"correlationId\":\"%s\"}",
+            message, System.currentTimeMillis(), correlationId));
     }
 
     /**
      * Immutable request context record - Rule #9 Immutability
+     *
+     * MANDATORY: Rule #15 - Include correlation ID for request tracing
      */
     private record RequestContext(
         HttpServletRequest request,
         HttpServletResponse response,
         FilterChain chain,
-        String requestPath
+        String requestPath,
+        String correlationId
     ) {
         public static RequestContext of(HttpServletRequest request, HttpServletResponse response, FilterChain chain) {
-            return new RequestContext(request, response, chain, request.getRequestURI());
+            String correlationId = Optional.ofNullable(request.getHeader(CORRELATION_ID_HEADER))
+                .filter(StringUtils::hasText)
+                .orElseGet(() -> java.util.UUID.randomUUID().toString());
+
+            return new RequestContext(request, response, chain, request.getRequestURI(), correlationId);
         }
     }
 
@@ -234,20 +260,37 @@ public class ServiceApiKeyFilter implements Filter {
         }
     }
 
+    /**
+     * Kong validated authentication strategy
+     *
+     * MANDATORY: Rule #15 - Comprehensive logging for security audit trail
+     */
     private record KongValidatedStrategy() implements AuthenticationStrategy {
         @Override
         public AuthenticationResult executeStrategy(RequestContext context) {
-            String konsumerId = context.request().getHeader(KONG_CONSUMER_ID_HEADER);
+            String consumerId = context.request().getHeader(KONG_CONSUMER_ID_HEADER);
             String consumerUsername = context.request().getHeader(KONG_CONSUMER_USERNAME_HEADER);
+
+            log.debug("Kong validation: correlation={}, consumerId={}, username={}, path={}",
+                context.correlationId(), consumerId, consumerUsername, context.requestPath());
+
             return AuthenticationResult.success(consumerUsername,
                 String.format("Kong validated consumer '%s' (ID: %s), granting SERVICE access",
-                             consumerUsername, konsumerId));
+                             consumerUsername, consumerId));
         }
     }
 
+    /**
+     * Direct API key authentication strategy
+     *
+     * MANDATORY: Rule #15 - Comprehensive logging for security audit trail
+     */
     private record DirectApiKeyStrategy() implements AuthenticationStrategy {
         @Override
         public AuthenticationResult executeStrategy(RequestContext context) {
+            log.debug("Direct API key auth: correlation={}, path={}, remoteAddr={}",
+                context.correlationId(), context.requestPath(), context.request().getRemoteAddr());
+
             return AuthenticationResult.success("direct-service-call",
                 String.format("Direct API key authentication successful for request: %s",
                              context.requestPath()));

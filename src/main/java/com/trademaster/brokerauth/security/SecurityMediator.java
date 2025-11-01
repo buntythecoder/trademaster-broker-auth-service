@@ -1,5 +1,6 @@
 package com.trademaster.brokerauth.security;
 
+import com.trademaster.brokerauth.util.SafeExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -123,38 +124,32 @@ public class SecurityMediator {
         return riskAssessmentService.assessSync(context);
     }
     
+    /**
+     * Execute secure operation with functional error handling
+     *
+     * MANDATORY: Rule #3 - Functional Programming (no try-catch)
+     * MANDATORY: Rule #11 - Railway Programming (SafeExecutor)
+     */
     private <T> CompletableFuture<SecurityResult<T>> executeSecureOperation(
             SecurityContext context,
             Supplier<CompletableFuture<T>> operation) {
-        
+
         log.debug("Executing secure operation: {}", context.correlationId());
-        
-        try {
-            return operation.get()
-                .thenApply(result -> SecurityResult.success(result, context))
-                .exceptionally(throwable -> {
-                    log.error("Secure operation failed: correlation={}, error={}", 
-                        context.correlationId(), throwable.getMessage());
-                    return SecurityResult.failure(SecurityError.OPERATION_FAILED, throwable.getMessage());
-                });
-        } catch (Exception e) {
-            return CompletableFuture.completedFuture(
-                SecurityResult.failure(SecurityError.OPERATION_FAILED, e.getMessage()));
-        }
+        return SafeExecutor.executeAsync(operation, context);
     }
-    
+
+    /**
+     * Execute sync secure operation with functional error handling
+     *
+     * MANDATORY: Rule #3 - Functional Programming (no try-catch)
+     * MANDATORY: Rule #11 - Railway Programming (SafeExecutor)
+     */
     private <T> SecurityResult<T> executeSecureOperationSync(
             SecurityContext context,
             Function<SecurityContext, T> operation) {
-        
-        try {
-            T result = operation.apply(context);
-            return SecurityResult.success(result, context);
-        } catch (Exception e) {
-            log.error("Synchronous secure operation failed: correlation={}, error={}", 
-                context.correlationId(), e.getMessage());
-            return SecurityResult.failure(SecurityError.OPERATION_FAILED, e.getMessage());
-        }
+
+        log.debug("Executing synchronous secure operation: {}", context.correlationId());
+        return SafeExecutor.executeSync(operation, context);
     }
     
     private <T> SecurityResult<T> auditResult(SecurityResult<T> result) {

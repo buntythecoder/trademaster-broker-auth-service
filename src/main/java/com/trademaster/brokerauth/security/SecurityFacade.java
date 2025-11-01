@@ -51,36 +51,29 @@ public class SecurityFacade {
     
     /**
      * Synchronous secure execution for simpler operations
+     *
+     * MANDATORY: Rule #3 - Functional Programming (no try-catch)
+     * MANDATORY: Rule #11 - Railway Programming (mediator handles all errors)
      */
     public <T> SecurityResult<T> secureExecuteSync(
             SecurityContext context,
             Function<SecurityContext, T> operation) {
 
-        try {
-            log.debug("Synchronous security facade processing: {}", context.correlationId());
-            return mediator.mediateAccessSync(context, operation);
-        } catch (Exception e) {
-            log.error("Synchronous security facade error: correlation={}, error={}",
-                context.correlationId(), e.getMessage(), e);
-            return SecurityResult.failure(SecurityError.SYSTEM_ERROR, e.getMessage());
-        }
+        log.debug("Synchronous security facade processing: {}", context.correlationId());
+        return mediator.mediateAccessSync(context, operation);
     }
 
     /**
      * Secure access method for test compatibility
-     * MANDATORY: Functional Programming - Rule #3
+     *
+     * MANDATORY: Rule #3 - Functional Programming (no try-catch)
+     * MANDATORY: Rule #11 - Railway Programming (mediator handles all errors)
      */
     public <T> SecurityResult<T> secureAccess(
             SecurityContext context,
             Supplier<T> operation) {
 
-        try {
-            log.debug("Security facade secure access: {}", context.correlationId());
-            return mediator.mediateAccessSync(context, ctx -> operation.get());
-        } catch (Exception e) {
-            log.error("Security facade secure access error: correlation={}, error={}",
-                context.correlationId(), e.getMessage(), e);
-            return SecurityResult.failure(SecurityError.SYSTEM_ERROR, e.getMessage());
-        }
+        log.debug("Security facade secure access: {}", context.correlationId());
+        return mediator.mediateAccessSync(context, ctx -> operation.get());
     }
 }

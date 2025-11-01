@@ -66,8 +66,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    implementation 'org.springframework.boot:spring-boot-actuator'
-    
+    implementation 'org.springframework.boot:spring-boot-actuator-autoconfigure'
+
     // MANDATORY: Consul used for configuration management (per TradeMaster standards)
     
     // MANDATORY: Consul Service Discovery and Configuration per Golden Specification  

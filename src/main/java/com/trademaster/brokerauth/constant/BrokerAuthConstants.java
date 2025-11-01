@@ -17,7 +17,14 @@ public final class BrokerAuthConstants {
     // ===== SESSION MANAGEMENT =====
     public static final String SESSION_KEY_PREFIX = "session:";
     public static final String RATE_LIMIT_KEY_PREFIX = "rate_limit_";
-    
+
+    // ===== VAULT SECRET KEYS =====
+    public static final String VAULT_SECRET_PATH = "secret/data/trademaster/broker-sessions";
+    public static final String VAULT_ACCESS_TOKEN_KEY = "access_token";
+    public static final String VAULT_REFRESH_TOKEN_KEY = "refresh_token";
+    public static final String VAULT_API_KEY = "api_key";
+    public static final String VAULT_API_SECRET = "api_secret";
+
     // ===== SECURITY CONSTANTS =====
     public static final int MAX_SESSION_AGE_HOURS = 24;
     public static final int MIN_USER_ID_LENGTH = 3;

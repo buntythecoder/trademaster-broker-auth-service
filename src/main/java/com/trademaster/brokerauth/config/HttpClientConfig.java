@@ -153,9 +153,9 @@ public class HttpClientConfig {
         log.info("🔧 Configuring Broker Auth Service primary RestTemplate with connection pooling");
 
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
-        factory.setConnectTimeout(connectionTimeout);
-        factory.setConnectionRequestTimeout(requestTimeout);
-        
+        factory.setConnectTimeout(Duration.ofMillis(connectionTimeout));
+        factory.setConnectionRequestTimeout(Duration.ofMillis(requestTimeout));
+
         RestTemplate restTemplate = new RestTemplateBuilder()
             .requestFactory(() -> factory)
             .build();
@@ -173,9 +173,9 @@ public class HttpClientConfig {
         log.info("🔧 Configuring Broker Auth Service circuit breaker RestTemplate");
 
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
-        factory.setConnectTimeout(connectionTimeout);
-        factory.setConnectionRequestTimeout(requestTimeout);
-        
+        factory.setConnectTimeout(Duration.ofMillis(connectionTimeout));
+        factory.setConnectionRequestTimeout(Duration.ofMillis(requestTimeout));
+
         RestTemplate restTemplate = new RestTemplateBuilder()
             .requestFactory(() -> factory)
             .build();
@@ -200,14 +200,15 @@ public class HttpClientConfig {
     public OkHttpClient okHttpClient() {
         log.info("🔧 Configuring Broker Auth Service OkHttp client for broker API calls");
         
+        // ✅ OkHttp 4.12.0 with modern Duration API
         OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(connectionTimeout, TimeUnit.MILLISECONDS)
-            .readTimeout(socketTimeout, TimeUnit.MILLISECONDS)
-            .writeTimeout(socketTimeout, TimeUnit.MILLISECONDS)
+            .connectTimeout(Duration.ofMillis(connectionTimeout))
+            .readTimeout(Duration.ofMillis(socketTimeout))
+            .writeTimeout(Duration.ofMillis(socketTimeout))
             .connectionPool(new ConnectionPool(
-                maxConnectionsPerRoute, 
-                keepAliveDuration, 
-                TimeUnit.MILLISECONDS))
+                maxConnectionsPerRoute,
+                keepAliveDuration,
+                TimeUnit.MILLISECONDS))  // Note: Duration constructor not working - investigating
             .retryOnConnectionFailure(true)
             .followRedirects(false)
             .followSslRedirects(false)

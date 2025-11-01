@@ -1,5 +1,6 @@
 package com.trademaster.brokerauth.controller;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -19,6 +20,7 @@ import java.util.Map;
  * - Functional programming patterns - no if-else statements
  * - Zero Trust Security - external access patterns
  * - Cognitive complexity ≤7 per method
+ * - OpenAPI Documentation - @Hidden for infrastructure endpoints
  *
  * PURPOSE:
  * - Eliminates "No static resource actuator/health" errors
@@ -29,6 +31,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/actuator")
 @Slf4j
+@Hidden // Exclude infrastructure redirect endpoints from OpenAPI documentation
 public class ActuatorRedirectController {
 
     @Value("${management.server.port:9084}")

@@ -74,36 +74,29 @@ public class ConsulConfig {
         Executors.newScheduledThreadPool(2, Thread.ofVirtual().name("consul-broker-auth-", 1).factory());
 
     /**
-     * ✅ FUNCTIONAL: Enhanced Consul discovery properties with Broker Auth-specific settings
+     * ✅ FUNCTIONAL: Customize Consul discovery properties with Broker Auth-specific settings
+     *
+     * MANDATORY: Rule #19 - Proper access control without reflection hacks
+     *
+     * This method customizes the auto-configured ConsulDiscoveryProperties bean
+     * instead of manually creating it with reflection. Spring Boot auto-configuration
+     * handles the instantiation, and we inject it to apply service-specific customizations.
+     *
      * Cognitive Complexity: 3
      */
     @Bean
-    @Profile("!test")  
-    public ConsulDiscoveryProperties consulDiscoveryProperties() {
-        // ✅ FUNCTIONAL: Direct property configuration without method chaining
-        ConsulDiscoveryProperties props = createConsulDiscoveryProperties();
-        
+    @Profile("!test")
+    public ConsulDiscoveryProperties consulDiscoveryProperties(ConsulDiscoveryProperties autoConfiguredProps) {
+        // ✅ FUNCTIONAL: Use Spring Boot auto-configured bean and customize it
         // ✅ CRITICAL: Enable manual registration since auto-discovery is disabled
-        props.setEnabled(true);
-        props.setRegister(true);
-        
-        configureServiceRegistrationProperties(props);
-        configureHealthCheckProperties(props);
-        configureServiceTagProperties(props);
-        configureNetworkingProperties(props);
-        return props;
-    }
-    
-    private ConsulDiscoveryProperties createConsulDiscoveryProperties() {
-        // Use reflection to create instance since constructor is private
-        try {
-            var constructor = ConsulDiscoveryProperties.class.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            return constructor.newInstance();
-        } catch (Exception e) {
-            // Fallback - this will be configured by Spring Boot auto-configuration
-            throw new IllegalStateException("Unable to create ConsulDiscoveryProperties", e);
-        }
+        autoConfiguredProps.setEnabled(true);
+        autoConfiguredProps.setRegister(true);
+
+        configureServiceRegistrationProperties(autoConfiguredProps);
+        configureHealthCheckProperties(autoConfiguredProps);
+        configureServiceTagProperties(autoConfiguredProps);
+        configureNetworkingProperties(autoConfiguredProps);
+        return autoConfiguredProps;
     }
 
     /**

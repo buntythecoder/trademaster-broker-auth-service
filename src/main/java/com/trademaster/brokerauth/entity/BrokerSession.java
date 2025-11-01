@@ -67,6 +67,9 @@ public class BrokerSession {
     @Column(name = "metadata", columnDefinition = "text")
     private String metadata;
 
+    @Column(name = "vault_path")
+    private String vaultPath;
+
     /**
      * Immutable update methods - Rule #9 Immutability
      * Returns new instances instead of mutating existing ones
@@ -133,19 +136,35 @@ public class BrokerSession {
     }
 
     /**
+     * Update vault path immutably
+     */
+    public BrokerSession withVaultPath(String newVaultPath) {
+        return this.toBuilder()
+            .vaultPath(newVaultPath)
+            .updatedAt(LocalDateTime.now())
+            .build();
+    }
+
+    /**
      * Check if session is active and not expired
+     *
+     * MANDATORY: Rule #3 - Functional Programming (Optional instead of null checks)
      */
     public boolean isActive() {
         return status == SessionStatus.ACTIVE &&
-               expiresAt != null &&
-               expiresAt.isAfter(LocalDateTime.now());
+               java.util.Optional.ofNullable(expiresAt)
+                   .map(expires -> expires.isAfter(LocalDateTime.now()))
+                   .orElse(false);
     }
 
     /**
      * Check if session needs refresh (expires within 5 minutes)
+     *
+     * MANDATORY: Rule #3 - Functional Programming (Optional instead of null checks)
      */
     public boolean needsRefresh() {
-        return expiresAt != null &&
-               expiresAt.isBefore(LocalDateTime.now().plusMinutes(5));
+        return java.util.Optional.ofNullable(expiresAt)
+            .map(expires -> expires.isBefore(LocalDateTime.now().plusMinutes(5)))
+            .orElse(false);
     }
 }
